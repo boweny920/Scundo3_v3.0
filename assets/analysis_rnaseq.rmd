@@ -1,0 +1,782 @@
+---
+title: "Secundo3 RNA-seq Analysis Report"
+output:
+  html_document:
+    code_folding: hide
+    warning: false
+params:
+  Reference_Genome: null
+  Annotation_Version: null
+---
+
+``` {r setup, echo=FALSE, message=FALSE, results="hide", warning=FALSE}
+library(rjson)
+library(parallel)
+library(matrixStats)
+library(grid)
+library(ggplot2)
+library(scales)
+library(RColorBrewer)
+library(pheatmap)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(pander)
+library(dygraphs)
+library(knitr)
+library(hash)
+library(rmarkdown)
+
+panderOptions('table.style','rmarkdown')
+panderOptions('table.split.table',Inf)
+
+# webserver
+webserver <- 'http://webfs/'
+# data.grid
+data_grid <- 'http://bioreports/data_grid.html?'
+# lims_link
+order_url_base <- 'https://lims.stowers.org/#/molecular-biology/ngs/requests/'
+
+options(stringsAsFactors=FALSE, width=80, knitr.figure_dir = "secundo", mc.cores=4)
+
+theme_x <- theme_bw() + theme(text = element_text(size=25))
+
+figure_path <- function(filename="") {
+  paste0(getOption("knitr.figure_dir"), "/", filename)
+}
+
+# Format number with commas
+pn <- function(i, ...) {
+  prettyNum(i, big.mark=",", ...)
+}
+
+options(width=500)
+opts_chunk$set(error=FALSE)
+opts_chunk$set(echo=FALSE)
+opts_chunk$set(tidy=FALSE)
+opts_chunk$set(warnings=FALSE)
+
+# Set up figure defaults
+#opts_chunk$set(fig.width=12, fig.height=6, fig.path=figure_path(), out.width="75%", out.height="75%")
+
+# Create output directory if it doesn't exist
+if(!file.exists(getOption("knitr.figure_dir"))) dir.create(getOption("knitr.figure_dir"))
+
+cap_first <- function(x) {
+  gsub("\\.", " ", gsub("_", " ", sub('^(\\w?)', '\\U\\1', x, perl=T)))
+}
+
+bam_stats_name  <- function(x) {
+  tail(unlist(strsplit(dirname(x), "/")),1)
+}
+
+
+picard.ext         <- "\\.rnaseq\\.stats"
+
+read_picard_stats <- function(picard.stats.file) {
+  read.delim(picard.stats.file, skip=6, nrows=1)
+}
+
+format_name <- function(x, picard_ext=picard.ext) {
+  gsub(picard_ext, "", basename(x))
+}
+
+make_link <- function(name, url) {
+  paste0("[",name,"](",url,")")
+}
+```
+
+```{r read_json, echo=FALSE, results="asis"}
+# read yaml/json/something from lims
+
+json.files <- list.files(pattern="*.json")
+
+#json.files <- rep(json.files, 3)
+
+json.lists <- lapply(json.files, function(json_filename) fromJSON(file=json_filename))
+
+json.lists <- unlist(json.lists, recursive=FALSE)
+
+# fields of interest
+#req.fields  <- c("prnOrderNo","orderType","genome","analysisGoals","readLength","readType")
+#json.fields <- lapply(json.lists, function(jl, query_fields) {
+#    lapply(query_fields, function(ql, json_list) {
+#        if(ql %in% names(json_list)) { json_list[ql] }
+#    }, jl)
+#}, req.fields)
+
+json.fields.v <- unlist(json.lists)
+
+strand <- grepl("Stranded",json.fields.v[["orderType"]],fixed=T)
+read_version <- function(x) { readLines(x) }
+
+star.version.files    <- list.files(getwd(), pattern="star_version.log", recursive=TRUE)
+rsem.version.files  <- list.files(getwd(), pattern="rsem_version.log", recursive=TRUE)
+
+th.v <- unique(do.call(c, lapply(star.version.files, readLines)))
+cf.v <- unique(do.call(c, lapply(rsem.version.files, readLines)))
+cf.v <- sapply(cf.v, function(x) sub('^(\\w?)', '\\U\\1', x, perl=T) , USE.NAMES=FALSE)
+cf.v <- sapply(cf.v, function(x) sub('Current version: RSEM ', '', x, perl=T) , USE.NAMES=FALSE)
+
+get_genome_version <- function(sx) {
+  sx.c <- gsub("\\s", "", readLines(sx))
+  gsub("\\\\", "", gsub("--genomeDir","\\1",sx.c[grep("--genomeDir", sx.c)]))
+}
+
+genome.version.l  <- list.files(getwd(), pattern="targets.tsv", recursive=TRUE)
+genome.version.c  <- unique(do.call(c,lapply(genome.version.l, get_genome_version)))
+
+# genome.v <- unlist(strsplit(genome.version.c,"/"))[5]
+# ensembl.v <- sub("_","embl ",unlist(strsplit(genome.version.c,"/"))[7])
+
+genome.v <- params$Reference_Genome
+ensembl.v <- params$Annotation_Version
+
+th.p <- "ENCODE suggested parameters"
+
+```
+
+
+
+```{r project_details, echo=FALSE, results="asis"}
+
+order_link <- paste0(order_url_base, json.fields.v[["prnOrderNo"]])
+
+cat("###", make_link("Explore Differentially Expressed Gene Analysis in BioTools Portal", "https://compbio.sgc.loc/"), "\n\n")
+
+cat("##", make_link(json.fields.v[["prnOrderNo"]], order_link), "\n\n")
+
+cat("### Machine Type\n\n")
+
+cat(json.fields.v[["readLength"]],":", json.fields.v[["readType"]],"\n\n")
+
+cat(json.fields.v[["orderType"]],"\n\n")
+
+cat("### Method\n\n")
+
+cat("Raw reads were demultiplexed into Fastq format allowing up to one mismatch using Illumina bcl-convert 3.10.5  Reads were aligned to UCSC genome",
+	genome.v, "with STAR aligner (version",th.v,"), using",ensembl.v," gene models. TPM values were generated using RSEM (version" , cf.v,").\n\n\n")
+
+cat("### Objective\n\n")
+
+cat(json.fields.v[["analysisGoals"]], "\n\n")
+
+if(file.exists("targets.tsv")) {
+  targets        <- read.delim("targets.tsv")
+	hash <- list()
+	for(i in 1:nrow(targets)){
+	key <- paste(targets$Sample.Name[i],targets$Flowcell[i],sep=":")
+	hash[[key]] <- unique(c(hash[[key]],targets$Lane[i]))
+
+	}
+	for(i in 1: nrow(targets)){
+		key <- paste(targets$Sample.Name[i],targets$Flowcell[i],sep=":")
+		targets$Lane[i] =  paste(hash[[key]],collapse = ',')
+	}
+	targets$Count = 1
+	targets <- unique(targets)
+	targets$Count = 1:nrow(targets)
+	rownames(targets) = 1:nrow(targets)
+  names(targets) <- cap_first(names(targets))
+  pander(targets)
+}
+
+```
+
+```{r load_bam_stats, echo=FALSE, results="asis"}
+
+
+load_align_summary <- function(align.summary.file, path.prefix="") {
+  # parse the input line from STAR's align summary to determine the total
+  # number of reads
+  align.summary.raw     <- read.delim(paste0(path.prefix, align.summary.file))
+  align.summary         <- unlist(lapply(align.summary.raw, function(a) { strsplit(a,"\t") }))
+  data.frame(sample_name=bam_stats_name(align.summary.file),
+            total=as.numeric(align.summary.raw[4,2]),
+            unique=as.numeric(align.summary.raw[7,2]),
+            uniquePercent=as.numeric(gsub("%","",align.summary.raw[8,2]))/100,
+            multi=as.numeric(align.summary.raw[22,2])+as.numeric(align.summary.raw[24,2]),
+            multiPercent=(as.numeric(gsub("%","",align.summary.raw[23,2]))+as.numeric(gsub("%","",align.summary.raw[25,2])))/100)
+ }
+
+align.stats.files <- list.files(getwd(), pattern="Log.final.out", recursive=TRUE)
+
+align.stats.list  <- lapply(align.stats.files, load_align_summary)
+
+align.stats       <- do.call(rbind, align.stats.list)
+
+align.stats$unaligned <- align.stats$total - align.stats$unique - align.stats$multi
+align.stats$unalignedPercent <- align.stats$unaligned/align.stats$total
+align.stats$aligned <- align.stats$unique + align.stats$multi
+align.stats$alignedPercent <- align.stats$aligned/align.stats$total
+align.stats$totalPercent <- 1
+
+write.table(align.stats, file=figure_path("align_stats.tsv"), sep="\t", row.names=FALSE, col.names=TRUE, quote=FALSE)
+
+bam.stats.d <- align.stats[,c(1,2,9,3,5,7)]
+bam.stats.p <- align.stats[,c(1,11,10,4,6,8)]
+
+colnames(bam.stats.d) <- c("sample_name","total","all_aligned","unique_mapped_reads","multi_mapped_reads","unaligned")
+colnames(bam.stats.p) <- c("sample_name","total","all_aligned","unique_mapped_reads","multi_mapped_reads","unaligned")
+
+alignment.metric.orders.d <- c("Total", "All aligned", "Unique mapped reads", "Multi mapped reads", "Unaligned")
+alignment.metric.orders.p <- c("Total", "All aligned", "Unique mapped reads", "Multi mapped reads", "Unaligned")
+
+# expand MAX.GROUP for large samples
+#MAX.GROUP <- ifelse(nrow(bam.stats.d) > 50, 8, MAX.GROUP)
+
+```
+
+### STAR Alignment Results
+
+Single Reads Alignment metrics are specified according to the following conditions:
+
+* Total - Number of fragments in FASTQ file(s)
+* All aligned - Number of fragments which aligned, include single and multiple mappings
+* Unique mapped reads - Number of fragments that align to only one location in the reference genome.
+* Multi mapped reads - Number of fragments that align to multiple locations in the reference genome.
+* Unaligned
+
+
+```{r alignment_reads, echo=TRUE, results="asis", warning=FALSE, message=FALSE, fig.width=16, fig.height=8}
+
+bam.stats.ar          <- melt(bam.stats.d, id.vars="sample_name")
+bam.stats.ar$variable <- cap_first(bam.stats.ar$variable)
+bam.stats.ar$variable <- factor(bam.stats.ar$variable, levels=alignment.metric.orders.d)
+
+g <- ggplot(bam.stats.ar, aes(x=sample_name, y=value, fill=variable)) +
+     geom_bar(stat="identity",position="dodge") +
+     scale_fill_brewer("Metric", palette="Set2") +
+     scale_y_continuous(name="Reads", labels = comma) +
+     theme_x +
+     theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           legend.position="top") +
+     guides(fill=guide_legend(title.position="top")) +
+     xlab("Sample Name")
+
+g
+
+```
+
+### STAR Alignment Percentage
+
+```{r alignment_percentage, echo=TRUE, results="asis", warning=FALSE, message=FALSE, fig.width=16, fig.height=8}
+
+bam.stats.ap          <- melt(bam.stats.p, id.vars="sample_name")
+bam.stats.ap$variable <- cap_first(bam.stats.ap$variable)
+bam.stats.ap$variable <- factor(bam.stats.ap$variable, levels=alignment.metric.orders.p)
+
+g <- ggplot(bam.stats.ap, aes(x=sample_name, y=value, fill=variable)) +
+     geom_bar(stat="identity",position="dodge") +
+     scale_fill_brewer("Metric", palette="Set2") +
+     scale_y_continuous(name="Percentage", labels=percent) +
+     theme_x +
+     theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           legend.position="top") +
+     guides(fill=guide_legend(title.position="top")) +
+     xlab("Sample Name")
+
+g
+
+```
+
+### Picard -- feature distribution
+
+```{r picard_data, echo=FALSE, results="asis"}
+
+picard.stats.files     <- list.files("./", pattern=picard.ext, full.names=TRUE, recursive=TRUE)
+picard.stats.dl        <- lapply(picard.stats.files, read_picard_stats)
+names(picard.stats.dl) <- sapply(picard.stats.files, format_name, USE.NAMES=FALSE)
+picard.stats.dx        <- do.call(rbind, picard.stats.dl)
+names(picard.stats.dx) <- tolower(names(picard.stats.dx))
+exclude.cols           <- c("sample","group")
+include.cols           <- names(picard.stats.dx)[!(names(picard.stats.dx) %in% exclude.cols)]
+picard.stats.dx        <- picard.stats.dx[, include.cols]
+picard.stats.dx$sample <- as.character(rownames(picard.stats.dx))
+picard.stats.dx        <- picard.stats.dx[order(picard.stats.dx$sample), ]
+
+# divide into groups, if
+
+
+# plot percentages
+perc.cols.i            <- c("pct_coding_bases","pct_utr_bases","pct_intronic_bases","pct_intergenic_bases","pct_ribosomal_bases")
+p.stats.perc.x         <- picard.stats.dx[,c("sample",perc.cols.i)]
+
+# add whole genome data
+genome.files <- tail(system(paste("find", getwd(), "-iname '*.GenomeBpTypes.txt' | sort"), intern=TRUE))
+
+reformat_genome <- function(genome) {
+	condition_name <- sub(getwd(),"",genome)
+	condition_name <- sub(".GenomeBpTypes.txt","",condition_name)
+	condition_name <- sub("/","",condition_name)
+	genome <- read.delim(genome)
+    genome$pct_cds <- genome$PC.CDS/genome$TOTAL
+    #genome$pct_utr <- (genome$PC.UTR+genome$NC.EXON)/genome$TOTAL
+    genome$pct_utr <- (genome$PC.UTR)/genome$TOTAL
+    genome$pct_intron <- genome$INTRON/genome$TOTAL
+    #genome$pct_inter <- genome$INTERGENE/genome$TOTAL 
+    genome$pct_inter <- (genome$INTERGENE+genome$NC.EXON)/genome$TOTAL
+    genome$pct_rib <- genome$RIBOSOME/genome$TOTAL
+    genome[1,1] <- condition_name
+    rownames(genome) <- genome[,1]
+    genome <- genome[,c(1,9:13)]
+    colnames(genome) <- colnames(p.stats.perc.x)
+
+    genome[1,]
+}
+
+genome.data <- mclapply(genome.files,reformat_genome)
+genome.data <- do.call("rbind",genome.data)
+
+
+
+p.stats.perc.x <- rbind(p.stats.perc.x, genome.data)
+
+p.stats.perc.x$group  <- length(p.stats.perc.x$sample)
+p.stats.perc.xm        <- melt(p.stats.perc.x, id.vars=c("sample","group"))
+
+# plot stranded-ness
+strand.cols.i          <- c("correct_strand_reads","incorrect_strand_reads")
+p.stats.strand.x       <- picard.stats.dx[,c("sample",strand.cols.i)]
+p.stats.strand.x$reads <- rowSums(p.stats.strand.x[,-1])
+
+p.stats.strand.x$perc_correct_strand_reads   <- NA
+p.stats.strand.x$perc_incorrect_strand_reads <- NA
+
+p.stats.strand.x <- transform(p.stats.strand.x,
+                              perc_correct_strand_reads = (correct_strand_reads / reads),
+                              perc_incorrect_strand_reads = (incorrect_strand_reads / reads))
+
+x.strand.cols <- c("sample", names(p.stats.strand.x)[grep("^perc", names(p.stats.strand.x))])
+
+p.stats.strand.xm <- melt(p.stats.strand.x[x.strand.cols], id.vars=c("sample"))
+
+```
+
+Alignment percentage of RNA-Seq data to functional classes of loci in the genome (mRNA(CDS+UTR), intronic, intergenic and ribosome percentage)
+is tallied by the CollectRNAMetrics method of the Picard suite.
+
+```{r picard_stats_split, echo=TRUE, results="asis", fig.width=15, fig.height=10}
+
+perc.xm.lbls <- c("pct_coding_bases"="CDS",
+				  "pct_utr_bases"="UTR",
+                  "pct_intronic_bases"="Intronic",
+                  "pct_intergenic_bases"="Intergenic",
+                  "pct_ribosomal_bases"="Ribosome")
+
+p.stats.perc.xm$variable <- factor(p.stats.perc.xm$variable, levels=names(perc.xm.lbls))
+
+p.stats.perc.xm          <- p.stats.perc.xm[with(p.stats.perc.xm, order(sample, variable)), ]
+
+# manually split by group and plot with flipped coordinates.
+# facet_wrap doesn't work with coord_flip
+
+plot_feat_dist <- function(group, p.stats.all) {
+  p.stats.group        <- p.stats.all[p.stats.all$group == group,]
+  p.stats.group$sample <- factor(p.stats.group$sample, levels=rev(unique(p.stats.group$sample)))
+  ps <- ggplot(p.stats.group, aes(x=sample, y=value, fill=variable)) +
+        geom_bar(stat="identity") +
+        scale_y_continuous("Percentage", labels=percent) +
+        labs(x="Samples") +
+        scale_fill_brewer(name="Base distribution", labels=perc.xm.lbls, palette="Set2") +
+        theme_x +
+        coord_flip() +
+        theme(strip.background = element_rect(colour='NA', fill='NA'),
+              strip.text.y = element_text(colour='white'),
+              legend.position="top") +
+        guides(fill=guide_legend(title.position="top"))
+  ps
+}
+
+unique_groups <- unique(p.stats.perc.xm$group)
+psx           <- lapply(unique_groups, plot_feat_dist, p.stats.perc.xm)
+
+for(ps in psx) { print(ps) }
+
+```
+
+### Strand Specificity
+
+Read strand information is generated using Picard with the STRAND_SPECIFICITY option.
+Whereas a non-strand-specific protocol would give values approximating a 50%/50% distribution,
+strand-specific protocols typically yield 99%/1%.
+
+
+```{r picard_strand_stats, echo=TRUE, results="asis", fig.width=15, fig.height=8, fig.cap=""}
+
+strand.xm.lbls <- c("perc_correct_strand_reads"="Sense Strand Reads",
+                    "perc_incorrect_strand_reads"="Antisense Strand Reads")
+
+p.st <- ggplot(p.stats.strand.xm, aes(x=sample, y=value, fill=variable)) +
+        geom_bar(stat="identity") +
+        scale_y_continuous(labels=percent) +
+        scale_fill_brewer(name="Strand correctness", labels=strand.xm.lbls, palette="Set2") +
+        labs(x="Sample", y="Percentage") +
+        theme_x +
+        theme(axis.text.x=element_text(angle=45, hjust=1),text=element_text(size=30),legend.position="top")
+
+p.st
+
+```
+
+
+### Picard coverage plot -- 5' to 3' tx coverage
+
+To measure the evenness of coverage, the average normalized coverage is calculated using Picard for
+the top 1000 expressed transcripts.
+
+The plot shows the coverage vs. position on the transcript, with all transcripts binned to a length of 100.
+
+According to Illumina guidance, the sample is considered acceptable if 3' bias is below 2.
+
+```{r picard_ts_cov, echo=TRUE,fig.width=11, fig.height=8}
+
+require(dygraphs)
+# read the bins...
+picard.bins.dl <- lapply(picard.stats.files, function(x) {
+  sample.name  <- format_name(x)
+  dx           <- read.delim(x, skip=11, header=FALSE, col.names=c("bin","cov"))
+  colnames(dx)    <- c("bin",sample.name)
+  dx[sample.name]
+})
+
+picard.bins.dx <- do.call(cbind, picard.bins.dl)
+
+picard.bins.dx <- data.frame(bins=seq(0,100,1),picard.bins.dx)
+
+dygraph(picard.bins.dx, main="RNA-Seq coverage vs. Transcript Position",
+		xlab="Normalized Distance Along Transcript", ylab="Normalized Coverage") %>%
+		dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
+		dyLegend(show="always",width=950) %>%
+		dyRangeSelector() %>%
+		dyCSS("dygraph.css")
+
+
+```
+
+
+### TPM Density Plot
+
+Density Plot shows the distribution of non-zero gene expression value (TPM) across samples.
+
+The samples prepared by the same protocol should expect constant profile.
+
+
+```{r rsem_density, echo=TRUE, fig.width=11,fig.height=8, message=FALSE}
+
+get_resm_files <- function() {
+  system(paste("find", getwd(), "-iname '*RSEM.genes.results' | sort"), intern=TRUE)
+}
+
+reformat_rsem_TPM <- function(df, label) {
+  df <- df[, c("gene_id", "TPM")]
+  df$sample <- label
+  df
+}
+
+reformat_rsem_FPKM <- function(df, label) {
+  df <- df[, c("gene_id", "FPKM")]
+  df$sample <- label
+  df
+}
+load_rsem_TPM <- function(rsem.dir=getwd()) {
+  rsem.files <- get_resm_files()
+  rsem.dfx.list   <- mclapply(rsem.files, function(rsem.file, rsem.dir) {
+    rsem.data  <- read.delim(rsem.file, stringsAsFactors=F, header=T)
+    rsem.label <- sub("^/", "",dirname(gsub(rsem.dir, "", rsem.file)))
+    rsem.label <- tail(unlist(strsplit(rsem.label, "/")),1)
+    reformat_rsem_TPM(rsem.data, rsem.label)
+  }, rsem.dir)
+  rsem.dfx.list
+}
+
+load_rsem_FPKM <- function(rsem.dir=getwd()) {
+  rsem.files <- get_resm_files()
+  rsem.dfx.list   <- mclapply(rsem.files, function(rsem.file, rsem.dir) {
+    rsem.data  <- read.delim(rsem.file, stringsAsFactors=F, header=T)
+    rsem.label <- sub("^/", "",dirname(gsub(rsem.dir, "", rsem.file)))
+    rsem.label <- tail(unlist(strsplit(rsem.label, "/")),1)
+    reformat_rsem_FPKM(rsem.data, rsem.label)
+  }, rsem.dir)
+  rsem.dfx.list
+}
+
+#RSEM FPKM values
+rsem.fpkms.list            <- load_rsem_FPKM()
+rsem.fpkms.tidy            <- do.call(rbind, rsem.fpkms.list)
+rsem.fpkms.tidy.c          <- rsem.fpkms.tidy %>% group_by(gene_id, sample) %>% summarise(FPKM=sum(FPKM))
+rsem.fpkms.wide            <- dcast(rsem.fpkms.tidy.c, gene_id ~ sample, value.var="FPKM")
+
+#RSEM TPM values
+rsem.tpms.list            <- load_rsem_TPM()
+rsem.tpms.tidy            <- do.call(rbind, rsem.tpms.list)
+rsem.tpms.tidy.c          <- rsem.tpms.tidy %>% group_by(gene_id, sample) %>% summarise(TPM=sum(TPM))
+rsem.tpms.wide            <- dcast(rsem.tpms.tidy.c, gene_id ~ sample, value.var="TPM")
+
+rsem.tpms.wide.orig <- rsem.tpms.wide
+
+# convert to log2+1 for correlation
+rsem.tpms.wide[,-1]        <- log2(rsem.tpms.wide[,-1]+ 0.1)
+
+rsem.tpms.wide[,-1][is.infinite(as.matrix(rsem.tpms.wide[,-1]))] <- 0
+rsem.tpms.wide[,-1][is.nan(as.matrix(rsem.tpms.wide[,-1]))]      <- 0
+rsem.tpms.wide[,-1][is.na(as.matrix(rsem.tpms.wide[,-1]))]       <- 0
+
+rsem.tpms.log <- rsem.tpms.wide[,-1][which(rowSums(rsem.tpms.wide[,-1])>0),]
+
+calculate_density <- function(x){
+	data = density(x,n=200,from=-2,to=10.5)
+	return(data$y)
+}
+
+density <- sapply(rsem.tpms.log,calculate_density)
+density_data <- data.frame(bins=seq(-2,10.5,length.out=200),density)
+
+dygraph(density_data, main="RNA-Seq log2(TPM) Density Plot",
+		xlab="Log2(TPM)", ylab="Density") %>%
+		dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
+		dyLegend(show="always",width=950) %>%
+		dyRangeSelector() %>%
+		dyCSS("dygraph.css")
+
+```
+
+### TPM Boxplot
+
+The boxplot is draw using log2(TPM). The samples with same protocols will expect similar medians.
+
+```{r boxplot, echo=TRUE, result="asis",fig.width=20,fig.height=10}
+
+row_set <- ceiling((ncol(rsem.tpms.log))/4)
+
+data=stack(rsem.tpms.log)
+
+dp <- ggplot(data,aes(x=ind,y=values,color=ind))+geom_boxplot()+
+		labs(x="Samples", y="Log2(TPM)") +
+        ggtitle("Boxplot of Log2(TPM)") +
+        theme_x +
+        theme(legend.position="bottom",axis.text.x = element_text(angle = 45, hjust = 1))+
+        guides(col=guide_legend(nrow=row_set,title="samples"))
+
+suppressWarnings(print(dp))
+
+```
+
+### Spearman Correlations Coefficient Heatmap
+
+To get a sense of how similar the samples are to each other, the Spearman correlations between all  samples were determined and clustered
+in the figure below. The correlation plot is based on the log2 transformed normalized gene expression values (TPM) that are generated
+using RSEM. (See session information below for details.)
+
+The following two heatmap illustrates Spearman correlation but only includes genes expressed above 2 TPM in at least one sample:
+
+* The first heatmap is drawn without clustering. The samples are ordered based on lims information.
+
+* The second heatmap has been hierarchically clustered based on Euclidean distance between samples. The samples has been reordered
+to reflect the tree structure.
+
+
+```{r cor_stats, echo=TRUE, results="asis", fig.cap="", fig.height=8, fig.width=12}
+
+cor.method <- "spearman"
+
+rsem.tpms.exp              <- rsem.tpms.wide.orig
+
+# convert to log2
+rsem.tpms.exp[,-1]         <- log2(rsem.tpms.exp[,-1])
+rsem.tpms.exp.m            <- as.matrix(rsem.tpms.exp[,-1])
+rownames(rsem.tpms.exp.m)  <- rsem.tpms.exp.m[,1]
+
+rsem.tpms.exp.m[is.infinite(rsem.tpms.exp.m)] <- NA
+rsem.tpms.exp.m[is.nan(rsem.tpms.exp.m)]      <- NA
+
+rsem.tpms.max.exp     <- rowMaxs(rsem.tpms.exp.m, na.rm=TRUE) > 1
+rsem.tpms.exp.m       <- rsem.tpms.exp.m[rsem.tpms.max.exp,  ]
+
+cor.exp.matrix         <- cor(rsem.tpms.exp.m, method=cor.method, use="complete.obs")
+
+plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes without clustering")
+
+pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
+
+plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes with hierarchical clustering")
+
+pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
+
+```
+
+### TPM Expression Table
+
+A common-seperated excel file (.csv) of TPM values for all genes in all samples:
+
+STAR parameters:
+
+--outSAMtype BAM SortedByCoordinate \
+--outSAMprimaryFlag OneBestScore \
+--outFilterMultimapNmax 20 \
+--outFilterMismatchNoverLmax 0.1  \
+--outFilterType BySJout  \
+--alignSJoverhangMin 8  \
+--alignSJDBoverhangMin 1  \
+--outFilterMismatchNmax 999  \
+--alignIntronMin 20  \
+--alignIntronMax 1000000 \
+--alignMatesGapMax 1000000  \
+--readFilesCommand zcat  \
+--limitBAMsortRAM 60000000000 \
+--quantMode TranscriptomeSAM GeneCounts \
+
+
+RSEM parameters:
+
+--estimate-rspd
+
+```{r write_rsem_files, echo=FALSE, results="asis"}
+
+rsem.tpms.wide <- rsem.tpms.wide.orig
+gene.data <- read.delim(tail(system(paste("find", getwd(), "-iname '*.gene_data.txt' | sort"), intern=TRUE)))
+rsem.tpms <- merge(gene.data[,1:2],rsem.tpms.wide,by.x="Gene_ID",by.y="gene_id")
+rsem.fpkms <- merge(gene.data[,1:2],rsem.fpkms.wide,by.x="Gene_ID",by.y="gene_id")
+
+write.table(rsem.tpms, file=figure_path("RSEM_TPM_table.csv"), sep=",", row.names=FALSE, col.names=TRUE, quote=FALSE)
+write.table(rsem.fpkms, file=figure_path("RSEM_FPKM_table.csv"), sep=",", row.names=FALSE, col.names=TRUE, quote=FALSE)
+
+cat('[RSEM TPM Table](',figure_path("RSEM_TPM_table.csv"),')\n\n')
+
+
+```
+
+### STAR read counts table
+
+A common-seperated excel file (.csv) of count values for all genes in all samples.
+
+
+```{r write_star_count, echo=FALSE, results="asis"}
+
+reformat_star <- function(df, label) {
+
+  names(df) <- c("gene_id","countAll", "countPos","countNeg")
+  df$sample <- label
+  df
+}
+
+# load original star files
+load_star <- function(star.dir=getwd()) {
+  	star.files <- system(paste0("find ", getwd(), " -iname '*.ReadsPerGene.out.tab' | sort"), intern=TRUE)
+  	star.dfx.list   <- mclapply(star.files, function(star.file, star.dir) {
+    star.data  <- read.delim(star.file, stringsAsFactors=F, header=F)
+    star.label <- sub("^/", "",dirname(gsub(star.dir, "", star.file)))
+    star.label <- tail(unlist(strsplit(star.label, "/")),1)
+    reformat_star(star.data, star.label)
+  }, star.dir)
+  star.dfx.list
+}
+
+format_star <- function(){
+	star.list <- load_star()
+	star.tidy            <- do.call(rbind, star.list)
+	star.tidy.c          <- star.tidy %>% group_by(gene_id, sample)
+	select <- ifelse(strand, "countNeg", "countAll")
+	star           <- dcast(star.tidy.c, gene_id ~ sample, value.var=select)
+	star
+}
+
+star            <- format_star()
+write.table(star, file=figure_path("star_count.csv"), sep=",", row.names=FALSE, col.names=TRUE, quote=FALSE)
+
+cat('[STAR-Count Table](',figure_path("star_count.csv"),')\n\n')
+```
+
+
+### ERCC Spike-in counts table
+
+A common-seperated excel file (.csv) of ERCC count values in all samples.
+
+```{r write_ercc, echo=FALSE, results="asis",warnings=F}
+reformat_ercc <- function(df, label) {
+
+  names(df) <- c("ercc_id", "length", "count", "unmapped")
+  df$sample <- label
+  df
+}
+
+get_ercc_files <- function() {
+  system(paste("find", getwd(), "-iname '*.ercc.stats' | sort"), intern=TRUE)
+}
+
+# load original ercc files
+load_ercc <- function(ercc.dir=getwd()) {
+  ercc.files <- get_ercc_files()
+  ercc.dfx.list   <- mclapply(ercc.files, function(ercc.file, ercc.dir) {
+    ercc.data  <- read.delim(ercc.file, stringsAsFactors=F, header=F)
+    ercc.label <- sub("^/", "",dirname(gsub(ercc.dir, "", ercc.file)))
+    ercc.label <- tail(unlist(strsplit(ercc.label, "/")),1)
+    reformat_ercc(ercc.data, ercc.label)
+  }, ercc.dir)
+  ercc.dfx.list
+}
+
+ercc.list            <- load_ercc()
+
+ercc.tidy            <- do.call(rbind, ercc.list)
+# group and sum rpkm for gene_id and sample, incase ercc failed
+ercc.tidy.c          <- ercc.tidy %>% group_by(ercc_id, sample)
+
+ercc.wide            <- dcast(ercc.tidy.c, ercc_id ~ sample, value.var="count")
+
+write.table(ercc.wide, file=figure_path("ercc_count.csv"), sep=",", row.names=FALSE, col.names=TRUE, quote=FALSE)
+
+cat('[ERCC-Count Table](',figure_path("ercc_count.csv"),')\n\n')
+
+```
+
+### Individual datasets
+
+The following table provides direct links to directories of STAR and RSEM files for each dataset.
+
+```{r build_fpkm_links, eco=FALSE, results="asis"}
+
+files <- system(paste("find", getwd(), "-iname '*.Aligned.toTranscriptome.out.bam' | sort"), intern=TRUE)
+
+tpm.link.dxl <- lapply(files, function(cfx, domain) {
+     link_name <- bam_stats_name(cfx)
+     link_path <- paste0(domain, dirname(cfx))
+     link_value <- sprintf('[%s](%s)', link_name, link_path)
+     data.frame(Sample=link_name, `Results Directory`=link_value)
+}, webserver)
+
+tpm.link.dx <- do.call(rbind, tpm.link.dxl)
+
+
+pander(tpm.link.dx)
+
+```
+
+
+
+
+###  Session information
+
+**Author:** Secundo pipeline, v3.0
+
+**Contact:** Please email helpCompbio@stowers.org if you have any questions or suggestions.
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+For reproducibility, this analysis was performed with the following STAR, RSEM and R/Bioconductor session:
+
+```{r top_cuff_version, echo=FALSE, comment=NA}
+
+
+message(paste(th.v))
+message(paste("RSEM",cf.v))
+
+# genome_version
+
+message("Genomes:", paste(genome.v))
+
+```
+
+``` {r session_info, echo=FALSE, comment=NA}
+sessionInfo()
+```

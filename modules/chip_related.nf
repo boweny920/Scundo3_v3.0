@@ -1,0 +1,98 @@
+process bowtie2_samtools_n_mkdirs {
+    
+    label 'big_mem'
+
+    input:
+    val meta
+
+    output:
+    tuple val("${scundo_outDir}"), path("${meta.scundoname}.sorted.bam"), path("${meta.scundoname}.sorted.bam.bai"), path("bam_stats.txt"), path("${meta.scundoname}_bowtie2.stat")
+
+    publishDir "${output_lib_folder}", mode: 'copy'
+
+    script:
+        // If user defined a genome to use, use that genome as reference. Otherwise, use the LIMs fetched reference genome as reference
+    if (!params.annotation) {
+        annotation = meta.annotation
+    } else {
+        annotation = params.annotation 
+    }
+
+    if (!params.genomeVer || !params.species) {
+        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${annotation}/${meta.ID}" )
+        index_genome = "${meta.species}/${meta.genome_ver}"
+        genomeVer = "${meta.genome_ver}"
+        scundo_outDir ="${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${annotation}" 
+    } else {
+        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${params.genomeVer}.${annotation}/${meta.ID}" )
+        index_genome = "${params.species}/${params.genomeVer}" 
+        genomeVer = "${params.genomeVer}"
+        scundo_outDir = "${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${params.genomeVer}.${annotation}"
+    } 
+
+    output_lib_folder.mkdirs()
+    
+    // Check if data is paired or single reads 
+    if (meta.readType.contains("PairEnd")) {
+        reads = meta.fastqs.split(' ')
+        read1 = reads[0]
+        read2 = reads[1]
+        read_flag = "-1 ${read1} -2 ${read2}"
+    } else {
+        read_flag = "-U ${meta.fastqs}"
+    }
+
+    """
+    bowtie2 -x ${params.indexDir}/${index_genome}/bowtie2/${genomeVer} -p 4 \
+        ${read_flag} -S ${meta.scundoname}.sam 2>&1 | tee -a ${meta.scundoname}_bowtie2.stat
+    
+    samtools view -bS ${meta.scundoname}.sam > ${meta.scundoname}.bam
+
+    samtools sort ${meta.scundoname}.bam -o ${meta.scundoname}.sorted.bam
+
+    samtools index ${meta.scundoname}.sorted.bam
+
+    /opt/apps/dev/containers/clean_ngs/1.0/bin/bam_stats ${meta.scundoname}.sorted.bam
+    """
+}
+
+process deep_tools_correlation {
+    
+    label 'deeptools'
+
+    input:
+    val scundo_outDir
+
+    output:
+    path "all_samples_bamsummary.npz" , emit: npz
+    path "all_samples_bamsummary_heatmap.png" , emit: heatmap
+    path "all_samples_bamsummary_pca.png" , emit: pca
+
+    publishDir "${scundo_outDir}", mode: 'copy'
+
+    script:
+    """
+    multiBamSummary bins --bamfiles ${scundo_outDir}/*/*.sorted.bam -o all_samples_bamsummary.npz -p 30 -e
+    plotCorrelation --corData all_samples_bamsummary.npz --plotFile all_samples_bamsummary_heatmap.png --whatToPlot heatmap -c spearman
+    plotPCA --corData all_samples_bamsummary.npz --plotFile all_samples_bamsummary_pca.png
+    """
+}
+
+process deep_tools_coverage {
+
+    label 'deeptools'
+
+    input:
+    val scundo_outDir
+
+    output:
+    path "all_samples_bamsummary_coverage.png", emit: png
+    path "coverage.tsv" , emit: tsv
+
+    publishDir "${scundo_outDir}", mode: 'copy'
+    
+    script:
+    """
+    plotCoverage -b ${scundo_outDir}/*/*.sorted.bam --plotFile all_samples_bamsummary_coverage --outRawCounts coverage.tsv
+    """ 
+}

@@ -1,0 +1,2 @@
+name	single_mapped_reads	single_mapped_reads_percent	multi_mapped_reads	multi_mapped_reads_percent	total_alignable_reads	primary_alignments	primary_alignments_percent	secondary_alignments	secondary_alignments_percent	total_alignments	total_aligns_in_bam	unique_positions
+s_293twtm26_l_s2p_input2.sorted	0	NaN	0	NaN	0	9492765	1.0	0	0.0	9492765	71548187	7806771

@@ -1,0 +1,9 @@
+<style type='text/css'>
+    .few .dygraph-legend > span.highlight {border: 1px solid grey;}
+    .many .dygraph-legend > span { display: none; }
+    .many .dygraph-legend > span.highlight { display: inline; }
+    .highlight {
+    /*border: 2px solid black;*/
+    background-color: #B0B0B0; /* grey background*/
+    }
+</style>

@@ -1,0 +1,472 @@
+``` {r setup, echo=FALSE, message=FALSE, results="hide"}
+library(rjson)
+library(parallel)
+library(matrixStats)
+library(grid)
+library(ggplot2)
+library(scales)
+library(RColorBrewer)
+library(pheatmap)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(pander)
+library(knitr)
+library(rtracklayer)
+library(csaw)
+library(dygraphs)
+library(hash)
+library(stringr)
+library(hash)
+library(here)
+
+panderOptions('table.style','rmarkdown')
+panderOptions('table.split.table',Inf)
+
+# webserver
+webserver <- 'https://webfs/'
+# data.grid
+data_grid <- 'http://bioreports/data_grid.html?'
+# lims_link
+order_url_base <- 'http://limskc01/zanmodules/molbio/ngs_editOrder.php?o='
+
+# max samples per group
+MAX.GROUP <- 6
+
+options(stringsAsFactors=FALSE, width=80, knitr.figure_dir = "secundo", mc.cores=4)
+
+theme_x <- theme_bw() + theme(text = element_text(size=25))
+
+figure_path <- function(filename="") {
+  paste0(getOption("knitr.figure_dir"), "/", filename)
+}
+
+# Format number with commas
+pn <- function(i, ...) {
+  prettyNum(i, big.mark=",", ...)
+}
+
+options(width=50)
+opts_chunk$set(error=FALSE)
+opts_chunk$set(echo=FALSE)
+opts_chunk$set(tidy=FALSE)
+opts_chunk$set(warnings=FALSE)
+
+# Set up figure defaults
+#opts_chunk$set(fig.width=12, fig.height=6, fig.path=figure_path(), dev=c('png','pdf'),fig.ext=c('png','pdf'), dpi=150, fig.cap="", out.width="75%", out.height="75%")
+
+# Create output directory if it doesn't exist
+if(!file.exists(getOption("knitr.figure_dir"))) dir.create(getOption("knitr.figure_dir"))
+
+cap_first <- function(x) {
+  gsub("\\.", " ", gsub("_", " ", sub('^(\\w?)', '\\U\\1', x, perl=T)))
+}
+
+bam_stats_name  <- function(x) {
+  tail(unlist(strsplit(dirname(x), "/")),1)
+}
+
+make_link <- function(name, url) {
+  paste0("[",name,"](",url,")")
+}
+```
+
+```{r read_json, echo=FALSE, results="asis"}
+# read yaml/json/something from lims
+
+json.files <- list.files(pattern="*.json")
+
+#json.files <- rep(json.files, 3)
+
+json.lists <- lapply(json.files, function(json_filename) fromJSON(file=json_filename))
+
+json.lists <- unlist(json.lists, recursive=FALSE)
+
+# fields of interest
+req.fields  <- c("orderId","prnOrderNo", "analysisGoals","readType","readLength","orderType")
+json.fields <- lapply(json.lists, function(jl, query_fields) {
+    lapply(query_fields, function(ql, json_list) {
+        if(ql %in% names(json_list)) { json_list[ql] }
+    }, jl)
+}, req.fields)
+
+json.fields.v <- unlist(json.fields)
+```
+
+# Secundo ChIP-seq Analysis Report
+
+```{r project_details, echo=FALSE, results="asis"}
+
+order_link <- paste0(order_url_base, json.fields.v[["orderId"]])
+
+cat("##", make_link(json.fields.v[["prnOrderNo"]], order_link), "\n\n")
+
+cat("### Machine Type\n\n")
+
+cat(json.fields.v[["readLength"]],":", json.fields.v[["readType"]],"\n\n")
+
+cat(json.fields.v[["orderType"]],"\n\n")
+
+cat("### Objective\n\n")
+
+cat(json.fields.v[["analysisGoals"]], "\n\n")
+
+if(file.exists("targets.tsv")) {
+  targets        <- read.delim("targets.tsv")
+
+  hash <- list()
+  for(i in 1:nrow(targets)){
+	key <- paste(targets$Secundo.Name[i],targets$Flowcell[i],sep=":")
+	hash[[key]] <- unique(c(hash[[key]],targets$Lane[i]))
+
+  }
+  for(i in 1: nrow(targets)){
+  	key <- paste(targets$Secundo.Name[i],targets$Flowcell[i],sep=":")
+  	targets$Lane[i] =  paste(hash[[key]],collapse = ',')
+
+  }
+  targets$Count = 1
+  targets <- unique(targets)
+  targets$Count = 1:nrow(targets)
+  rownames(targets) = 1:nrow(targets)
+  names(targets) <- cap_first(names(targets))
+  pander(targets)
+}
+
+```
+
+```{r load_bam_stats, echo=FALSE, results="asis"}
+
+load_bam_stats  <- function(bam.stats.file, path.prefix="") {
+  bam.stats             <- read.delim(paste0(path.prefix, bam.stats.file), sep="\t", as.is=TRUE)
+  bam.stats.cols        <- names(bam.stats)
+  bam.stats$sample_name <- bam_stats_name(bam.stats.file)
+  bam.stats[,c("sample_name", bam.stats.cols)]
+}
+
+bam.stats.files <- list.files(getwd(), pattern="bam_stats.txt", recursive=TRUE)
+bam.stats.list  <- mclapply(bam.stats.files, load_bam_stats)
+bam.stats       <- do.call(rbind, bam.stats.list)
+bam.stats <- bam.stats[,c(1:2,12:14)]
+
+load_align_summary <- function(align.summary.file, path.prefix="") {
+  # parse the input line from bowte2 output file
+  # number of reads
+  align.summary.raw     <- readLines(paste0(path.prefix, align.summary.file))
+  align.summary         <- unlist(lapply(align.summary.raw, function(a) { strsplit(a," ") }))
+  data.frame(sample_name=bam_stats_name(align.summary.file),
+  										total=as.numeric(align.summary[1]),
+  										align0=as.numeric(align.summary[17]),
+  										align0Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[18]],"[%]"))[1],"[(]"))[2]),
+  										align1=as.numeric(align.summary[26]),
+                                        align1Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[27]],"[%]"))[1],"[(]"))[2]),
+                                        align2=as.numeric(align.summary[36]),
+                                        align2Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[37]],"[%]"))[1],"[(]"))[2]),
+                                        overallPerc=as.numeric(unlist(strsplit(align.summary[[41]],"[%]"))[1])
+  										)
+}
+
+load_align_summary_pair <- function(align.summary.file, path.prefix="") {
+  # parse the input line from Tophat's align summary to determine the total
+  # number of reads
+  align.summary.raw     <- readLines(paste0(path.prefix, align.summary.file))
+  align.summary         <- unlist(lapply(align.summary.raw, function(a) { strsplit(a," ") }))
+
+  data.frame(sample_name=bam_stats_name(align.summary.file),
+  										total=as.numeric(align.summary[1]),
+  										align0=as.numeric(align.summary[17]),
+  										align0Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[18]],"[%]"))[1],"[(]"))[2]),
+  										align1=as.numeric(align.summary[27]),
+                                        align1Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[28]],"[%]"))[1],"[(]"))[2]),
+                                        align2=as.numeric(align.summary[38]),
+                                        align2Perc=as.numeric(unlist(strsplit(unlist(strsplit(align.summary[[39]],"[%]"))[1],"[(]"))[2]),
+                                        overallPerc=as.numeric(unlist(strsplit(align.summary[[146]],"[%]"))[1])
+  										)
+}
+
+align.stats.files <- list.files(getwd(), pattern="bowtie2.stat", recursive=TRUE)
+
+if(json.fields.v[["readType"]]=="Paired Reads"){
+    align.stats.list  <- lapply(align.stats.files, load_align_summary_pair)
+}else{
+    align.stats.list  <- lapply(align.stats.files, load_align_summary)
+}
+
+align.stats       <- do.call(rbind, align.stats.list)
+
+bam.align.stats   <- merge(align.stats, bam.stats)
+
+write.table(bam.align.stats, file=figure_path("bam_stats.tsv"), sep="\t", row.names=FALSE, col.names=TRUE, quote=FALSE)
+
+if(json.fields.v[["readType"]]=="Paired Reads"){
+	bam.stats		<- bam.align.stats[,grep("^name$", names(bam.align.stats), invert=TRUE)]
+	bam.stats$totalPerc <- 100
+	bam.stats.d		<- bam.stats[,c(1,11,5,7,3)]
+	bam.stats.p		<- bam.stats[,c(1,13,9,6,8,4)]
+	bam.stats.p[,2:6]=bam.stats.p[2:6]/100
+	colnames(bam.stats.d) <- c("sample_name","total_pairs","single_mapped_pairs","multi_mapped_pairs","unaligned_pairs")
+	colnames(bam.stats.p) <- c("sample_name","total_pairs","all_mapped_pairs","single_mapped_pairs","multi_mapped_pairs","unaligned_pairs")
+
+	alignment.metric.orders.d <- c("Total pairs", "Single mapped pairs", "Multi mapped pairs", "Unaligned pairs")
+	alignment.metric.orders.p <- c("Total pairs","All mapped pairs", "Single mapped pairs", "Multi mapped pairs", "Unaligned pairs")
+
+}else{
+	bam.stats		<- bam.align.stats[,grep("^name$", names(bam.align.stats), invert=TRUE)]
+    bam.stats$totalPerc <- 100
+    bam.stats.d		<- bam.stats[,c(1,11,10,5,7,3)]
+    bam.stats.p		<- bam.stats[,c(1,13,9,6,8,4)]
+    bam.stats.p[,2:6]=bam.stats.p[2:6]/100
+    colnames(bam.stats.d) <- c("sample_name","total","all_aligned","single_mapped","multi_mapped","unaligned")
+    colnames(bam.stats.p) <- c("sample_name","total","all_aligned","single_mapped","multi_mapped","unaligned")
+
+    alignment.metric.orders.d <- c("Total", "All aligned", "Single mapped", "Multi mapped", "Unaligned")
+    alignment.metric.orders.p <- c("Total", "All aligned", "Single mapped", "Multi mapped", "Unaligned")
+}
+
+
+
+```
+
+### Alignment Results
+
+Single Reads Alignment metrics are specified according to the following conditions:
+
+* Total - Number of fragments in FASTQ file(s)
+* All mapped aligned - Number of fragments which aligned, include single and multiple mappings
+* Single mapped reads - Number of fragments that align to only one location in the reference genome.
+* Multi mapped reads - Number of fragments that align to multiple locations in the reference genome.
+* Unaligned - Number of fragments unaligned
+
+Paired-end Reads Alignment metrics are specified according to the following conditions:
+
+* Total - Number of pairs in FASTQ file(s)
+* All pairs - Number of pairs which aligned, include single and multiple mappings
+* Single mapped pairs - Number of pairs aligned concordantly exactly 1 time.
+* Multi mapped pairs - Number of pairs aligned concordantly >1 time.
+* Unaligned pairs - Number of pairs unaligned concordantly or discordantly.
+
+
+```{r alignment_reads, echo=FALSE, results="asis", warning=FALSE, message=FALSE, fig.width=16, fig.height=8}
+
+bam.stats.ar          <- melt(bam.stats.d, id.vars="sample_name")
+bam.stats.ar$variable <- cap_first(bam.stats.ar$variable)
+bam.stats.ar$variable <- factor(bam.stats.ar$variable, levels=alignment.metric.orders.d)
+
+g <- ggplot(bam.stats.ar, aes(x=sample_name, y=value, fill=variable)) +
+     geom_bar(stat="identity",position="dodge") +
+     scale_fill_brewer("Metric", palette="Set2") +
+     scale_y_continuous(name="Reads", labels = comma) +
+     theme_x +
+     theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           legend.position="top") +
+     guides(fill=guide_legend(title.position="top")) +
+     xlab("Sample Name")
+
+g
+
+```
+
+### Alignment - Percentage
+
+```{r alignment_percentage, echo=FALSE, results="asis", warning=FALSE, message=FALSE,fig.width=16, fig.height=8}
+
+bam.stats.ap          <- melt(bam.stats.p, id.vars="sample_name")
+bam.stats.ap$variable <- cap_first(bam.stats.ap$variable)
+bam.stats.ap$variable <- factor(bam.stats.ap$variable, levels=alignment.metric.orders.p)
+
+g <- ggplot(bam.stats.ap, aes(x=sample_name, y=value, fill=variable)) +
+     geom_bar(stat="identity",position="dodge") +
+     scale_fill_brewer("Metric", palette="Set2") +
+     scale_y_continuous(name="Percentage", labels=percent) +
+     theme_x +
+     theme(axis.text.x = element_text(angle = 45, hjust = 1),
+           legend.position="top") +
+     guides(fill=guide_legend(title.position="top")) +
+     xlab("Sample Name")
+
+g
+
+```
+
+
+
+###Pearson Correlation Plot for Samples
+
+This was caluated by deeptool's plotCorrelation. It computes the overall similarity between two or more files based on read coverage (or other scores) within genomic regions, which must be calculated using either multiBamSummary or multiBigwigSummary.
+
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotCorrelation.html#id3)
+
+
+![CorrelationHeatmap](./all_samples_bamsummary_heatmap.png){width=98%}
+
+
+###Sequence Coverage Plot
+
+Of the two plots, the first one simply represents the frequencies of the found read coverages, which helps you judge how relevant the mean coverage value (printed next to the sample name) is. 
+If the distribution of read coverages is more or less homoskedatic and, ideally, normally distributed (most likely it won't be), then the mean is a very appropriate proxy for sequencing depth.
+The second plot helps you answer the question what is the fraction of the genome that has a depth of sequencing of 2?
+
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotCoverage.html#what-the-plots-tell-you)
+
+![CoveragePlot](./all_samples_bamsummary_coverage.png){width=98%}
+
+
+###PCA Plot
+
+PCA calculation was performed by deeptool's plotPCA. It sorts the principal components according to the amount of variability of the data that they explain. Based on this, you will obtain two plots:
+
+* The eigenvalues of the top two principal components
+* The Scree plot for the top five principal components where the bars represent the amount of variability explained by the individual factors and the red line traces the amount of variability is explained by the individual components in a cumulative manner
+
+![PcaPlot](./all_samples_bamsummary_pca.png){width=98%}
+
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotPCA.html)
+
+
+
+### Individual datasets
+
+The following table provides direct links to directories of BAM and Track files for each dataset.
+
+```{r datasets, echo=FALSE, results="asis"}
+
+bam.dir    <- list.files(getwd(), pattern="*..sorted.bam$", full.names=T, recursive=TRUE)
+link.dxl <- lapply(bam.dir, function(cfx, domain) {
+     link_name <- tail(unlist(strsplit(dirname(cfx), "/")),1)
+     link_path <- paste0(domain, dirname(cfx))
+     link_value <- sprintf('[%s](%s)', link_name, link_path)
+     data.frame(Sample=link_name, `Results Directory`=link_value)
+}, webserver)
+
+link.dx <- do.call(rbind, link.dxl)
+
+pander(link.dx)
+
+```
+
+###  Session information
+
+**Author:** Secundo pipeline, v2.0
+
+**Contact:** Please email Bowen (by2747@stowers.org) if you have questions or suggestion
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+For reproducibility, this analysis was performed with the following R/Bioconductor session:
+
+```{r genome_version, echo=FALSE, comment=NA}
+# genome_version
+
+extract_strings_after_molng <- function(path) {
+  # Use regular expression to extract strings after "MOLNG-xxxx"
+  matches <- regmatches(path, regexec("MOLNG-[0-9]+", path))
+  
+  # Check if a match was found
+  if (!is.na(matches[[1]]) && attr(matches[[1]], "match.length") > 0) {
+    start <- attr(matches[[1]], "match.end") + 1
+    return(substr(path, start, nchar(path)))
+  } else {
+    warning("No match found for the pattern 'MOLNG-xxxx' in the given path.")
+    return(NULL)
+  }
+}
+
+# Get the current directory
+current_dir <- here()
+# Replace the path with the current directory
+path <- current_dir
+strings_after_molng <- extract_strings_after_molng(path)
+
+message(cat("Genome:\n", paste(strings_after_molng, collapse="\n")))
+
+```
+
+``` {r session_info, echo=FALSE, comment=NA}
+sessionInfo()
+
+
+###MetaGene Plot for ChIP-seq Samples
+
+#bam.files     <- list.files("./", pattern="*.metadata", full.names=TRUE, recursive=TRUE)
+#bam.dl        <- lapply(bam.files, read.delim)
+#bam.dx        <- do.call(cbind, bam.dl)
+#bam.dx		<- data.frame(bp=seq(-5000,5000,1),bam.dx)
+
+#dygraph(bam.dx, main="MetaGene Plot for All Samples", xlab="Distance(bp)", ylab="Relative coverage per base") %>%
+#    			dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
+#    			dyLegend(show="always",width=850) %>%
+#    			dyRangeSelector() %>%
+#    			dyCSS("dygraph.css")
+#bam.dl        <- mclapply(bam.files, function(x){mget(load(x))},mc.cores=length(bam.files))
+
+
+#bam.files     <- list.files("./", pattern="*.sorted.bam$", full.names=F, recursive=TRUE)
+#bam.name 	 <- unlist(mclapply(bam.files,function(x){unlist(strsplit(x,"/"))[1]}))
+
+
+#param <- readParam(minq=20)
+#dedup.on <- reform(param,dedup=TRUE)
+#bam.dl	<- mclapply(bam.files,function(x){windowCounts(x,width=2000,bin=T, filter=1)},mc.cores=length(bam.files))
+
+#bam.ip.index <- which(bam.name %in% ip_sample)
+#bam.input.index <- which(bam.name %in% input_sample)
+
+#color <- rainbow(length(bam.files))
+#color.ip <- color[1:length(bam.ip.index)]
+#color.input <- color[(length(bam.ip.index)+1):length(color)]
+
+
+#for(i in 1:length(color.ip)){
+
+#		bam <- bam.dl[[bam.ip.index[i]]]
+#		x <-1:nrow(assay(bam))/nrow(assay(bam))
+#		y <-cumsum(as.numeric(sort(assay(bam))))
+#		y <-y/max(y)
+
+#		if(i==1){
+#			plot(x,y,type="l",xlim=c(0,1),ylim=c(0,1),col=color.ip[i],
+#				xlab="Percentage of bins",ylab="Percentage of tags",
+#				main="Cumulative percentage enrichment in each channel")
+#		}else{
+#			lines(x,y,col=color.ip[i])
+#		}
+#}
+
+
+#for(j in 1:length(color.input)){
+
+#		bam <- bam.dl[[bam.input.index[j]]]
+#		x <-1:nrow(assay(bam))/nrow(assay(bam))
+#		y <-cumsum(as.numeric(sort(assay(bam))))
+#		y <-y/max(y)
+#		lines(x,y,col=color.input[j])
+#
+#}
+
+#legend(x="topleft", ncol=3,legend=c(bam.name[bam.ip.index],bam.name[bam.input.index]), fill=c(color.ip,color.input), bty="n")
+
+#if(ncol(cross.dx)>20){
+
+#	cross.dx.input	<- cross.dx[,with(cross.dx,colnames(cross.dx) %in% input_sample)]
+#	cross.dx.input	<- data.frame(bp=seq(0,500,1),cross.dx.input)
+
+#	cross.dx.ip 	<- cross.dx[,with(cross.dx,colnames(cross.dx) %in% ip_sample)]
+#	cross.dx.ip		<- data.frame(bp=seq(0,500,1),cross.dx.ip)
+
+#	if(ncol(cross.dx.input)>1){
+#	dygraph(cross.dx.input, main="Cross Correlation Plot for Input Samples", xlab="BP", ylab="CCF") %>%
+#			dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
+#			dyLegend(show="always",width=850) %>%
+#			dyRangeSelector() %>%
+#			dyCSS("dygraph.css")
+#	}
+
+#	if(ncol(cross.dx.ip)>1){
+#	dygraph(cross.dx.ip, main="Cross Correlation Plot for IP Samples", xlab="BP", ylab="CCF") %>%
+#			dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
+#			dyLegend(show="always",width=850) %>%
+#			dyRangeSelector() %>%
+#			dyCSS("dygraph.css")
+#	}
+#}else{}
+```
