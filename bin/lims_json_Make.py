@@ -12,7 +12,7 @@ def fetch_sample_table_from_LIMS(fc_id, molng):
     Get the run info from LIMS. Returns the /n/analysis/ folder where the primary analsysis pipeline copied all the data
     """
     # Get run info from lims
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' # Should get a new one for each pipeline, or even each user
 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 

@@ -558,7 +558,7 @@ rsem.tpms.wide[,-1][is.infinite(as.matrix(rsem.tpms.wide[,-1]))] <- 0
 rsem.tpms.wide[,-1][is.nan(as.matrix(rsem.tpms.wide[,-1]))]      <- 0
 rsem.tpms.wide[,-1][is.na(as.matrix(rsem.tpms.wide[,-1]))]       <- 0
 
-rsem.tpms.log <- rsem.tpms.wide[,-1][which(rowSums(rsem.tpms.wide[,-1])>0),]
+rsem.tpms.log <- rsem.tpms.wide[which(rowSums(rsem.tpms.wide[, -1, drop = FALSE]) > 0), -1, drop = FALSE]
 
 calculate_density <- function(x){
 	data = density(x,n=200,from=-2,to=10.5)
@@ -614,57 +614,7 @@ ggsave(filename = file_path, plot = dp, device = "pdf", width = 45, height = 30,
 
 ### Spearman Correlations Coefficient Heatmap
 
-To get a sense of how similar the samples are to each other, the Spearman correlations between all  samples were determined and clustered
-in the figure below. The correlation plot is based on the log2 transformed normalized gene expression values (TPM) that are generated
-using RSEM. (See session information below for details.)
-
-The following two heatmap illustrates Spearman correlation but only includes genes expressed above 2 TPM in at least one sample:
-
-* The first heatmap is drawn without clustering. The samples are ordered based on lims information.
-
-* The second heatmap has been hierarchically clustered based on Euclidean distance between samples. The samples has been reordered
-to reflect the tree structure.
-
-
-```{r cor_stats, echo=TRUE, results="asis", fig.cap="", fig.height=8, fig.width=12}
-
-cor.method <- "spearman"
-
-rsem.tpms.exp              <- rsem.tpms.wide.orig
-
-# convert to log2
-rsem.tpms.exp[,-1]         <- log2(rsem.tpms.exp[,-1])
-rsem.tpms.exp.m            <- as.matrix(rsem.tpms.exp[,-1])
-rownames(rsem.tpms.exp.m)  <- rsem.tpms.exp.m[,1]
-
-rsem.tpms.exp.m[is.infinite(rsem.tpms.exp.m)] <- NA
-rsem.tpms.exp.m[is.nan(rsem.tpms.exp.m)]      <- NA
-
-rsem.tpms.max.exp     <- rowMaxs(rsem.tpms.exp.m, na.rm=TRUE) > 1
-rsem.tpms.exp.m       <- rsem.tpms.exp.m[rsem.tpms.max.exp,  ]
-
-cor.exp.matrix         <- cor(rsem.tpms.exp.m, method=cor.method, use="complete.obs")
-
-plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes without clustering")
-
-pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-g <- pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-file_path <- file.path(folder_path, "Spearman_Correlations_Coefficient_Heatmap.pdf")
-
-ggsave(filename = file_path, plot = g, device = "pdf", width = 30, height = 30, units = "in", limitsize = FALSE)
-
-plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes with hierarchical clustering")
-
-pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-g <- pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-file_path <- file.path(folder_path, "Spearman_Correlations_Coefficient_Heatmap_hier.pdf")
-
-ggsave(filename = file_path, plot = g, device = "pdf", width = 30, height = 30, units = "in", limitsize = FALSE)
-```
+No correlations can be performed with just one sample. 
 
 ### TPM Expression Table
 

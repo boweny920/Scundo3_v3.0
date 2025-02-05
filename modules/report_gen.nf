@@ -39,6 +39,7 @@ process target_tsv_lims_json {
 
     input:
     val secundo_folder 
+    path samplesheet
 
     output: 
     val "${secundo_folder}"
@@ -46,31 +47,45 @@ process target_tsv_lims_json {
     // publishDir "${secundo_folder}", mode: 'copy' 
 
     script:
+    if (!params.samplereport) {
 
-    if (!params.molng)
-    """
-    target_tsv_Make_V2.py --lims ${params.fcid}
+        if (!params.molng){
 
-    lims_json_Make.py --lims ${params.fcid}
+            """
+            target_tsv_Make_V2.py --lims ${params.fcid}
 
-    cp lims_order.json targets.tsv ${secundo_folder}
+            lims_json_Make.py --lims ${params.fcid}
 
-    cp ${projectDir}/assets/dygraph.css ${secundo_folder}
+            cp lims_order.json targets.tsv ${secundo_folder}
 
-    """
-    
-    else
-    """
-    target_tsv_Make_V2.py --lims ${params.fcid} --molng ${params.molng}
+            cp ${projectDir}/assets/dygraph.css ${secundo_folder}
 
-    lims_json_Make.py --lims ${params.fcid} --molng ${params.molng}
+            """
+        
+        } else {
+            """
+            target_tsv_Make_V2.py --lims ${params.fcid} --molng ${params.molng}
 
-    cp lims_order.json targets.tsv ${secundo_folder}
+            lims_json_Make.py --lims ${params.fcid} --molng ${params.molng}
 
-    cp ${projectDir}/assets/dygraph.css ${secundo_folder}
+            cp lims_order.json targets.tsv ${secundo_folder}
 
-    """
+            cp ${projectDir}/assets/dygraph.css ${secundo_folder}
 
+            """
+        }
+
+    } else {
+        """
+        target_tsv_Make_PublicData.py -s ${samplesheet}
+
+        lims_json_Make_PublicData.py -s ${samplesheet}
+
+        cp lims_order.json targets.tsv ${secundo_folder}
+
+        cp ${projectDir}/assets/dygraph.css ${secundo_folder}
+        """
+    }
 
 }
 
@@ -154,7 +169,7 @@ process biotools_orderAppend {
 
     db_nfScundo3.py /n/core/Bioinformatics/tools/biotools/db/orders.txt
 
-    ssh -o StrictHostKeyChecking=no compbio_svc@compbio "mongoimport --db RNAseqAnalysis --collection OrderInfo --jsonArray --drop --file /n/core/Bioinformatics/tools/biotools/db/datafile.json"
+    ssh -o StrictHostKeyChecking=no compbiotools "conda activate /n/core/Bioinformatics/tools/biotools/conda_env; mongoimport --db RNAseqAnalysis --collection OrderInfo --jsonArray --drop --file /n/core/Bioinformatics/tools/biotools/db/datafile.json"
     """
 }
 

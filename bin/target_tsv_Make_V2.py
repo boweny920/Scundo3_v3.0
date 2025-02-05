@@ -11,7 +11,7 @@ def fetch_lims_molngID(fc_id, molng):
     Get the run info from LIMS. Returns the Molng-id associated to the fcid
     """
     # Get run info from lims
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' # Should get a new one for each pipeline, or even each user
 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 
@@ -34,7 +34,7 @@ def fetch_lims_molngID(fc_id, molng):
     return molng_id 
 
 def secundo3_fetch_lims_target_tsv(molng):
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 
         'Accept': 'application/json'}
@@ -53,7 +53,7 @@ def fetch_sample_table_from_LIMS(fc_id, molng):
     Get the run info from LIMS. Returns the /n/analysis/ folder where the primary analsysis pipeline copied all the data
     """
     # Get run info from lims
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' # Should get a new one for each pipeline, or even each user
 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 
@@ -105,8 +105,8 @@ for fcid in fcid_list:
     sampleName = df_sample_info["sampleName"].to_list()
     secundoName = [replace_special_characters(v) for v in sampleName]
     flowCell = [fcid] * len(order_list)
-    libraryID = df_sample_info["libID"]
-    laneID = df_sample_info["laneId"]
+    libraryID = df_sample_info["libID"].to_list()
+    laneID = df_sample_info["laneId"].to_list()
     bardcodes = ["-".join(s['sequence'] for s in v) for v in df_sample_info["indexes"].to_list()] # This is to consider the situations where two indexes are available
 
     df_target_tsv = pd.DataFrame()

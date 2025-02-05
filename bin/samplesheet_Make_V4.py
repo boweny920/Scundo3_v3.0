@@ -12,7 +12,7 @@ def fetch_lims_molngID(fc_id, molng):
     Get the run info from LIMS. Returns the Molng-id associated to the fcid
     """
     # Get run info from lims
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' # Should get a new one for each pipeline, or even each user
 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 
@@ -36,7 +36,7 @@ def fetch_lims_molngID(fc_id, molng):
     return molng_id 
 
 def secundo3_fetch_lims(molng):
-    NGS_LIMS = 'https://lims.stowers.org/zanmodules/molecular-biology/ngs'
+    NGS_LIMS = 'http://lims.stowers.org/zanmodules/molecular-biology/ngs'
     API_TOKEN = 'ca7952666a03dd4e59d0cd59e39fecc7' 
     header = {'x-zan-apitoken': f'{API_TOKEN}', 
         'Accept': 'application/json'}

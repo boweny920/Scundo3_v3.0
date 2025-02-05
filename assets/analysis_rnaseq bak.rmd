@@ -26,8 +26,6 @@ library(dygraphs)
 library(knitr)
 library(hash)
 library(rmarkdown)
-library(htmlwidgets)
-
 
 panderOptions('table.style','rmarkdown')
 panderOptions('table.split.table',Inf)
@@ -187,6 +185,7 @@ if(file.exists("targets.tsv")) {
 
 ```{r load_bam_stats, echo=FALSE, results="asis"}
 
+
 load_align_summary <- function(align.summary.file, path.prefix="") {
   # parse the input line from STAR's align summary to determine the total
   # number of reads
@@ -198,7 +197,7 @@ load_align_summary <- function(align.summary.file, path.prefix="") {
             uniquePercent=as.numeric(gsub("%","",align.summary.raw[8,2]))/100,
             multi=as.numeric(align.summary.raw[22,2])+as.numeric(align.summary.raw[24,2]),
             multiPercent=(as.numeric(gsub("%","",align.summary.raw[23,2]))+as.numeric(gsub("%","",align.summary.raw[25,2])))/100)
-}
+ }
 
 align.stats.files <- list.files(getwd(), pattern="Log.final.out", recursive=TRUE)
 
@@ -253,21 +252,10 @@ g <- ggplot(bam.stats.ar, aes(x=sample_name, y=value, fill=variable)) +
      theme(axis.text.x = element_text(angle = 45, hjust = 1),
            legend.position="top") +
      guides(fill=guide_legend(title.position="top")) +
-     xlab("Sample Name") 
-    #  theme(plot.margin = margin(1, 1, 1, 5, "cm"))
+     xlab("Sample Name")
 
 g
 
-folder_path <- "big_plots_folder"
-
-if (!dir.exists(folder_path)) {
-  dir.create(folder_path)
-}
-
-file_path <- file.path(folder_path, "alignment_reads.pdf")
-
-# Save the plot with specified size
-ggsave(filename = file_path, plot = g, device = "pdf", width = 45, height = 30, units = "in", limitsize = FALSE)
 ```
 
 ### STAR Alignment Percentage
@@ -286,15 +274,10 @@ g <- ggplot(bam.stats.ap, aes(x=sample_name, y=value, fill=variable)) +
      theme(axis.text.x = element_text(angle = 45, hjust = 1),
            legend.position="top") +
      guides(fill=guide_legend(title.position="top")) +
-     xlab("Sample Name") 
-    #  theme(plot.margin = margin(1, 1, 1, 5, "cm"))
+     xlab("Sample Name")
 
 g
 
-file_path <- file.path(folder_path, "alignment_percentage.pdf")
-
-# Save the plot with specified size
-ggsave(filename = file_path, plot = g, device = "pdf", width = 45, height = 30, units = "in", limitsize = FALSE)
 ```
 
 ### Picard -- feature distribution
@@ -402,12 +385,6 @@ plot_feat_dist <- function(group, p.stats.all) {
               strip.text.y = element_text(colour='white'),
               legend.position="top") +
         guides(fill=guide_legend(title.position="top"))
-  
-
-  file_path <- file.path(folder_path, paste0("picard_feature_distribution_", group, ".pdf"))
-
-  ggsave(filename = file_path, plot = ps, device = "pdf", width = 45, height = 30, units = "in", limitsize = FALSE)
-
   ps
 }
 
@@ -437,13 +414,8 @@ p.st <- ggplot(p.stats.strand.xm, aes(x=sample, y=value, fill=variable)) +
         labs(x="Sample", y="Percentage") +
         theme_x +
         theme(axis.text.x=element_text(angle=45, hjust=1),text=element_text(size=30),legend.position="top")
-        # theme(plot.margin = margin(1, 1, 1, 5, "cm"))
 
 p.st
-
-file_path <- file.path(folder_path, "Strand_Specificity.pdf")
-
-ggsave(filename = file_path, plot = p.st, device = "pdf", width = 50, height = 30, units = "in", limitsize = FALSE)
 
 ```
 
@@ -479,15 +451,7 @@ dygraph(picard.bins.dx, main="RNA-Seq coverage vs. Transcript Position",
 		dyRangeSelector() %>%
 		dyCSS("dygraph.css")
 
-g <- dygraph(picard.bins.dx, main="RNA-Seq coverage vs. Transcript Position",
-		xlab="Normalized Distance Along Transcript", ylab="Normalized Coverage") %>%
-		dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
-		dyLegend(show="always",width=950) %>%
-		dyRangeSelector() %>%
-		dyCSS("dygraph.css")
 
-file_path <- file.path(folder_path, "picard_coverage_plot.html")
-htmlwidgets::saveWidget(g, file_path)
 ```
 
 
@@ -575,16 +539,6 @@ dygraph(density_data, main="RNA-Seq log2(TPM) Density Plot",
 		dyRangeSelector() %>%
 		dyCSS("dygraph.css")
 
-g <- dygraph(density_data, main="RNA-Seq log2(TPM) Density Plot",
-		xlab="Log2(TPM)", ylab="Density") %>%
-		dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
-		dyLegend(show="always",width=950) %>%
-		dyRangeSelector() %>%
-		dyCSS("dygraph.css")
-
-file_path <- file.path(folder_path, "tpm_density_plot.html")
-htmlwidgets::saveWidget(g, file_path)
-
 ```
 
 ### TPM Boxplot
@@ -603,13 +557,9 @@ dp <- ggplot(data,aes(x=ind,y=values,color=ind))+geom_boxplot()+
         theme_x +
         theme(legend.position="bottom",axis.text.x = element_text(angle = 45, hjust = 1))+
         guides(col=guide_legend(nrow=row_set,title="samples"))
-        # theme(plot.margin = margin(1, 1, 1, 5, "cm"))
 
 suppressWarnings(print(dp))
 
-file_path <- file.path(folder_path, "tpm_boxplot.pdf")
-
-ggsave(filename = file_path, plot = dp, device = "pdf", width = 45, height = 30, units = "in", limitsize = FALSE)
 ```
 
 ### Spearman Correlations Coefficient Heatmap
@@ -649,21 +599,10 @@ plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expre
 
 pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 
-g <- pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-file_path <- file.path(folder_path, "Spearman_Correlations_Coefficient_Heatmap.pdf")
-
-ggsave(filename = file_path, plot = g, device = "pdf", width = 30, height = 30, units = "in", limitsize = FALSE)
-
 plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes with hierarchical clustering")
 
 pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 
-g <- pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-file_path <- file.path(folder_path, "Spearman_Correlations_Coefficient_Heatmap_hier.pdf")
-
-ggsave(filename = file_path, plot = g, device = "pdf", width = 30, height = 30, units = "in", limitsize = FALSE)
 ```
 
 ### TPM Expression Table
@@ -723,13 +662,13 @@ reformat_star <- function(df, label) {
 
 # load original star files
 load_star <- function(star.dir=getwd()) {
-    star.files <- system(paste0("find ", getwd(), " -iname '*.ReadsPerGene.out.tab' | sort"), intern=TRUE)
-    star.dfx.list   <- mclapply(star.files, function(star.file, star.dir) {
-      star.data  <- read.delim(star.file, stringsAsFactors=F, header=F)
-      star.label <- sub("^/", "",dirname(gsub(star.dir, "", star.file)))
-      star.label <- tail(unlist(strsplit(star.label, "/")),1)
-      reformat_star(star.data, star.label)
-    }, star.dir)
+  	star.files <- system(paste0("find ", getwd(), " -iname '*.ReadsPerGene.out.tab' | sort"), intern=TRUE)
+  	star.dfx.list   <- mclapply(star.files, function(star.file, star.dir) {
+    star.data  <- read.delim(star.file, stringsAsFactors=F, header=F)
+    star.label <- sub("^/", "",dirname(gsub(star.dir, "", star.file)))
+    star.label <- tail(unlist(strsplit(star.label, "/")),1)
+    reformat_star(star.data, star.label)
+  }, star.dir)
   star.dfx.list
 }
 
@@ -813,19 +752,6 @@ pander(tpm.link.dx)
 
 ```
 
-### Big plots for download
-```{r big_plot_link, eco=FALSE}
-# Get the current working directory
-cwd <- getwd()
-
-# Specify the folder name you want to combine with the current working directory
-folder_name <- "big_plots_folder"
-
-# Combine the current working directory with the folder name to show the full path
-bigplot_full_path <- file.path(cwd, folder_name)
-
-```
-If you have more than 60 samples in this order and find the figures generated here too crowded. Bigger plots are generated [HERE](`r bigplot_full_path`)
 
 
 

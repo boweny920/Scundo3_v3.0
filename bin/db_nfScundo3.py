@@ -26,7 +26,9 @@ for index in data:
     order['Lab'] = i.split('/')[-3]
     order['Requester'] = i.split('/')[-2]
 
-    
+    if os.path.exists(i+'/targets.tsv') != True:
+        continue
+
     with open(i+'/targets.tsv') as tsvfile:
         reader = csv.DictReader(tsvfile, dialect='excel-tab')
         reader = sorted(reader, key=lambda d:d['Secundo Name'])

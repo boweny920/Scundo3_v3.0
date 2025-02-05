@@ -1,4 +1,0 @@
-libID	molngID	samplename	secundoname	species	genome_ver	fastqs	pi_name	requester_name	readType	annotation
-SRR13220719	PRJNA683643	ciCEC-P8-2	s_cicec-p8-2	Mus_musculus	GRCm39	/n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964740/SRR13220719/SRR13220719_1.fastq.gz /n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964740/SRR13220719/SRR13220719_2.fastq.gz	CompBio	by2747	PairEnd	Ens_110
-SRR13220726	PRJNA683643	D7-3	s_d7-3	Mus_musculus	GRCm39	/n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964746/SRR13220726/SRR13220726_1.fastq.gz /n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964746/SRR13220726/SRR13220726_2.fastq.gz	CompBio	by2747	PairEnd	Ens_110
-SRR13220729	PRJNA683643	pCEC	s_pcec	Mus_musculus	GRCm39	/n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964749/SRR13220729/SRR13220729_1.fastq.gz /n/core/Bioinformatics/PublicData/PRJNA683643/GSM4964749/SRR13220729/SRR13220729_2.fastq.gz	CompBio	by2747	PairEnd	Ens_110

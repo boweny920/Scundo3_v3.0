@@ -21,7 +21,7 @@ workflow FINAL_REPORT {
                     .map{it[0]}
     
     if (!params.public_dataxlsx) {
-        target_tsv_lims_json(secundoFolder)
+        target_tsv_lims_json(secundoFolder, samplesheet)
 
         if (!params.skip_biotools) { // If one does not wish data be published on biotools
             biotools_orderAppend(target_tsv_lims_json.out)

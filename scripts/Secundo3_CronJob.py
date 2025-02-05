@@ -98,10 +98,13 @@ def new_fc_pipeline_run(logfile, copy_complete_txt_name, data_folder):
         fc_id = get_fc_id(path)
         lims_info = fetch_lims(fc_id)
         if lims_info != None:
-            if "RNA-Seq" in lims_info["orderType"]: # Making sure it is only RNA-Seq orders!! 
+            if "RNA-Seq" in lims_info["orderType"] or "RNA-seq" in lims_info["orderType"]: # Making sure it is only RNA-Seq orders!! 
                 fc_dict[fc_id] = {"fc_path":path, "orderType":lims_info["orderType"], "nanalysis_path":lims_info['nanalysis_path'], "reference_genome": lims_info["genome_ver"]} 
             # if "Chip-Seq" add in the future
+            if "Chip-Seq" in lims_info["orderType"] or "ChIPmentation" in lims_info["orderType"]: # Making sure it is only Chip-Seq orders!! 
+                fc_dict[fc_id] = {"fc_path":path, "orderType":lims_info["orderType"], "nanalysis_path":lims_info['nanalysis_path'], "reference_genome": lims_info["genome_ver"]} 
             
+
     fc_dict = check_log(fc_dict, logfile) # Remove fc from dict if it's alraedy in the log file
     
     if len(fc_dict) > 0:
@@ -109,11 +112,16 @@ def new_fc_pipeline_run(logfile, copy_complete_txt_name, data_folder):
             logging.info(f"Discovered primary data for {fc} - nanalysis_path: {fc_dict[fc]['fc_path']}")
             os.chdir(fc_dict[fc]['fc_path'])
             
-            if "RNA-Seq" in fc_dict[fc]["orderType"]:
+            if "RNA-Seq" in fc_dict[fc]["orderType"] or "RNA-seq" in fc_dict[fc]["orderType"]:
                 cmd = f"source ~/.bash_profile; source /etc/profile; source ~/.bashrc; PATH=\"/usr/local/bin:$PATH\"; nextflow run /n/ngs/tools/SECUNDO3/RUN/main.nf \
                     --fcid {fc} -profile slurm > \
                     /n/ngs/tools/SECUNDO3/logs/machine_run_logs/{fc}.SECUNDO3-RNASeq.nf.log"
             
+            if "Chip-Seq" in fc_dict[fc]["orderType"] or "ChIPmentation" in fc_dict[fc]["orderType"]:
+                cmd = f"source ~/.bash_profile; source /etc/profile; source ~/.bashrc; PATH=\"/usr/local/bin:$PATH\"; nextflow run /n/ngs/tools/SECUNDO3/RUN/main.nf \
+                    --fcid {fc} --chip_cut_atac -profile slurm > \
+                    /n/ngs/tools/SECUNDO3/logs/machine_run_logs/{fc}.SECUNDO3-RNASeq.nf.log"
+
             start_email = f"/usr/bin/mail -s 'Flowcell: {fc}; Order Type: {fc_dict[fc]['orderType']}; SECUNDO3 execution STARTED' -r by2747@stowers.org by2747@stowers.org" #,mpe@stowers.org,hhassan@stowers.org,mcm@stowers.org
             call(start_email, shell=True)
             

@@ -6,7 +6,7 @@ process bowtie2_samtools_n_mkdirs {
     val meta
 
     output:
-    tuple val("${scundo_outDir}"), path("${meta.scundoname}.sorted.bam"), path("${meta.scundoname}.sorted.bam.bai"), path("bam_stats.txt"), path("${meta.scundoname}_bowtie2.stat")
+    tuple val("${scundo_outDir}"), path("${meta.scundoname}.sorted.bam"), path("${meta.scundoname}.sorted.bam.bai"), path("bam_stats.txt"), path("${meta.scundoname}_bowtie2.stat"), path("${meta.scundoname}.chancedata"), path("${meta.scundoname}.rpm.bw"), path("${meta.scundoname}_cross_corr.data"), path("${meta.scundoname}_cross_corr.jpg")
 
     publishDir "${output_lib_folder}", mode: 'copy'
 
@@ -53,6 +53,8 @@ process bowtie2_samtools_n_mkdirs {
     samtools index ${meta.scundoname}.sorted.bam
 
     /opt/apps/dev/containers/clean_ngs/1.0/bin/bam_stats ${meta.scundoname}.sorted.bam
+
+    bamTobw.r ${meta.scundoname}.sorted.bam pair ChIP-seq ${genomeVer} ${index_genome}
     """
 }
 

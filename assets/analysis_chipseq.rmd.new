@@ -28,7 +28,7 @@ webserver <- 'https://webfs/'
 # data.grid
 data_grid <- 'http://bioreports/data_grid.html?'
 # lims_link
-order_url_base <- 'https://lims.stowers.org/#/molecular-biology/ngs/requests/'
+order_url_base <- 'http://limskc01/zanmodules/molbio/ngs_editOrder.php?o='
 
 # max samples per group
 MAX.GROUP <- 6
@@ -98,7 +98,7 @@ json.fields.v <- json.lists
 
 ```{r project_details, echo=FALSE, results="asis"}
 
-order_link <- paste0(order_url_base, json.fields.v[["prnOrderNo"]])
+order_link <- paste0(order_url_base, json.fields.v[["orderId"]])
 
 cat("##", make_link(json.fields.v[["prnOrderNo"]], order_link), "\n\n")
 
@@ -211,7 +211,7 @@ if(json.fields.v[["readType"]]=="Paired Reads"){
 	alignment.metric.orders.d <- c("Total pairs", "Single mapped pairs", "Multi mapped pairs", "Unaligned pairs")
 	alignment.metric.orders.p <- c("Total pairs","All mapped pairs", "Single mapped pairs", "Multi mapped pairs", "Unaligned pairs")
 
-} else {
+}else{
 	bam.stats		<- bam.align.stats[,grep("^name$", names(bam.align.stats), invert=TRUE)]
     bam.stats$totalPerc <- 100
     bam.stats.d		<- bam.stats[,c(1,11,10,5,7,3)]
@@ -291,103 +291,37 @@ g
 
 
 
-### Cross Correlation Plot for ChIP-seq Samples
+###Pearson Correlation Plot for Samples
 
-Cross-correlation quantifies fragment clustering (IP enrichment) based on the correlation between genome-wide stranded tag densities.
-It is computed as the Pearson linear correlation between the Crick strand and the Watson strand, after shifting Watson by k base pairs.
-The average fragment length can be estimated from the cross-correlation plot. The plot is generated using the correlateReads() function
-in the R package csaw.
+This was caluated by deeptool's plotCorrelation. It computes the overall similarity between two or more files based on read coverage (or other scores) within genomic regions, which must be calculated using either multiBamSummary or multiBigwigSummary.
 
-[Click here for more explanation and case studies.](https://stowersinstitute.sharepoint.com/sites/ComputationalBiologyPublic/SitePages/Secundo-ChIP-Seq.aspx)
-
-* For Input Samples, the maximum CCF will be the read length.
-* For IP Samples, maximum CCF is calculated based on following cross-correlation plot. The value mapped to maximum CCF will be used as fragment length in extending the track files.
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotCorrelation.html#id3)
 
 
-```{r cross_correlation, echo=FALSE, result="asis",fig.width=10, fig.height=8}
-
-cross.files     <- list.files("./", pattern="*_cross_corr.data", full.names=TRUE, recursive=TRUE)
-cross.dl        <- lapply(cross.files, read.delim)
-cross.dx        <- do.call(cbind, cross.dl)
-#input_sample	<- unique(subset(targets,Type=="Input")[,4])
-#ip_sample		<- unique(subset(targets,Type=="IP")[,4])
-
-cross.dx		<- data.frame(bp=seq(0,500,1),cross.dx)
-dygraph(cross.dx, main="Cross Correlation Plot for All Samples", xlab="BP", ylab="CCF") %>%
-			dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
-			dyLegend(show="always",width=850) %>%
-			dyRangeSelector() %>%
-			dyCSS("dygraph.css")
-
-```
-
-```{r track_ucsc_ip, echo=FALSE, results="asis"}
-
-# if(json.fields.v[["readType"]]=="Single Read"){
-#   bw.ip	 <- list.files(getwd(), pattern="*.rpm.bw", full.names=T, recursive=TRUE)
-  
-#   get_table <- function(file){
-#   	name <- unlist(strsplit(file,"/"))
-#   	sample <- name[length(name)]
-#   	sample_name <- unlist(strsplit(sample,"\\."))[1]
-#   	frag_len <- sub("ex","",str_extract(sample,"ex[0-9]+"))
-#   	#link_value <- sprintf('[%s](%s)', sample_name, paste0(webserver,file))
-#   	data.frame(sample_name,frag_len)
-  
-#   }
+![CorrelationHeatmap](./all_samples_bamsummary_heatmap.png){width=98%}
 
 
-#   bw.table	<- do.call(rbind, lapply(bw.ip,get_table))
-#   colnames(bw.table) <- c("IP Samples","Estimated Fragment Length")
-#   pander(bw.table)
-# }
+###Sequence Coverage Plot
 
-```
+Of the two plots, the first one simply represents the frequencies of the found read coverages, which helps you judge how relevant the mean coverage value (printed next to the sample name) is. 
+If the distribution of read coverages is more or less homoskedatic and, ideally, normally distributed (most likely it won't be), then the mean is a very appropriate proxy for sequencing depth.
+The second plot helps you answer the question what is the fraction of the genome that has a depth of sequencing of 2?
 
-### ChanceQC Plot for ChIP-seq Samples
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotCoverage.html#what-the-plots-tell-you)
 
-ChanceQC plot shows the strength of IP enrichment comparing to input samples. To estimate the strength of IP enrichment,
-read counts are calculated with a fixed bin size (n=10000) across the genome and the cumulative percentages of read counts are
-plotted against percentages of the genome. If reads are evenly distributed across the genome, a straight y=x line is expected.
-The R package GenomicAlignments is used to generate the binned read coverage and plot for all IP and input samples.
-
-[Click here for more explanation and case studies.](https://helix.stowers.org/Department/ComputationalBiology/CompBiologyPages/Secundo%20ChIP-Seq.aspx#chance)
+![CoveragePlot](./all_samples_bamsummary_coverage.png){width=98%}
 
 
-```{r chance_qc,echo=FALSE, result="asis",fig.width=10, fig.height=8, message=FALSE, warning=FALSE}
+###PCA Plot
 
-species <- unique(targets$Genome)
-chance.files     <- list.files("./", pattern="*.chancedata", full.names=TRUE, recursive=TRUE)
+PCA calculation was performed by deeptool's plotPCA. It sorts the principal components according to the amount of variability of the data that they explain. Based on this, you will obtain two plots:
 
+* The eigenvalues of the top two principal components
+* The Scree plot for the top five principal components where the bars represent the amount of variability explained by the individual factors and the red line traces the amount of variability is explained by the individual components in a cumulative manner
 
-chance.dl        <- lapply(chance.files, read.delim)
-chance.dx        <- do.call(cbind, chance.dl)
-chance.matrix   <- cor(log2(chance.dx+0.1), method="pearson", use="complete.obs")
-chance.dx		<- data.frame(bp=1:nrow(chance.dx)/nrow(chance.dx),chance.dx)
+![PcaPlot](./all_samples_bamsummary_pca.png){width=98%}
 
-
-dygraph(chance.dx, main="Cumulative percentage enrichment in each sample", xlab="Percentage of bins",ylab="Percentage of reads") %>%
-					dyHighlight(highlightSeriesOpts=list(strokeWidth=3)) %>%
-					dyLegend(show="always",width=850) %>%
-					dyRangeSelector() %>%
-					dyCSS("dygraph.css")
-
-
-```
-
-### Pearson Correlation Coefficient Sample Heatmap
-
-To get a sense of how similar the samples are to each other, the pearson correlations between all samples were determined and clustered
-in the figure below. The correlation plot is based on the log2 read counts of bins across the genome that are generated using the R package
-GenomicAlignments with fixed bin size (n=10000).
-
-```{r chance_heatmap,echo=FALSE, result="asis",fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
-
-
-pheatmap(chance.matrix,main="Sample Correlation for Log2 Binned Genome Sums", border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
-
-
-```
+[Click here for more explanation and case studies.](https://deeptools.readthedocs.io/en/develop/content/tools/plotPCA.html)
 
 
 

@@ -12,15 +12,15 @@ workflow CHIP_RELATED {
                                     .collect()
                                     .map {it[0]}
 
-    deep_tools_correlation(scundo_outDir)
-    deep_tools_coverage(scundo_outDir)
+    // deep_tools_correlation(scundo_outDir)
+    // deep_tools_coverage(scundo_outDir)
 
     emit:
     scundo_dir = scundo_outDir
-    correlation = deep_tools_correlation.out.npz
-    coverage = deep_tools_coverage.out.tsv
-
-
+    // correlation = deep_tools_correlation.out.npz
+    correlation = "PlaceHolder"
+    // coverage = deep_tools_coverage.out.tsv
+    coverage = "PlaceHolder"
 
     
 }
