@@ -11,24 +11,11 @@ process bowtie2_samtools_n_mkdirs {
     publishDir "${output_lib_folder}", mode: 'copy'
 
     script:
-        // If user defined a genome to use, use that genome as reference. Otherwise, use the LIMs fetched reference genome as reference
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
 
-    if (!params.genomeVer || !params.species) {
-        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${annotation}/${meta.ID}" )
-        index_genome = "${meta.species}/${meta.genome_ver}"
-        genomeVer = "${meta.genome_ver}"
-        scundo_outDir ="${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${annotation}" 
-    } else {
-        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${params.genomeVer}.${annotation}/${meta.ID}" )
-        index_genome = "${params.species}/${params.genomeVer}" 
-        genomeVer = "${params.genomeVer}"
-        scundo_outDir = "${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${params.genomeVer}.${annotation}"
-    } 
+    output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${meta.annotation}/${meta.ID}" )
+    index_genome = "${meta.species}/${meta.genome_ver}"
+    genomeVer = "${meta.genome_ver}"
+    scundo_outDir ="${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${meta.annotation}" 
 
     output_lib_folder.mkdirs()
     
@@ -43,6 +30,8 @@ process bowtie2_samtools_n_mkdirs {
     }
 
     """
+    ml bowtie2 samtools
+
     bowtie2 -x ${params.indexDir}/${index_genome}/bowtie2/${genomeVer} -p 4 \
         ${read_flag} -S ${meta.scundoname}.sam 2>&1 | tee -a ${meta.scundoname}_bowtie2.stat
     
@@ -74,6 +63,8 @@ process deep_tools_correlation {
 
     script:
     """
+    ml deeptools
+
     multiBamSummary bins --bamfiles ${scundo_outDir}/*/*.sorted.bam -o all_samples_bamsummary.npz -p 30 -e
     plotCorrelation --corData all_samples_bamsummary.npz --plotFile all_samples_bamsummary_heatmap.png --whatToPlot heatmap -c spearman
     plotPCA --corData all_samples_bamsummary.npz --plotFile all_samples_bamsummary_pca.png
@@ -95,6 +86,8 @@ process deep_tools_coverage {
     
     script:
     """
+    ml deeptools
+    
     plotCoverage -b ${scundo_outDir}/*/*.sorted.bam --plotFile all_samples_bamsummary_coverage --outRawCounts coverage.tsv
     """ 
 }

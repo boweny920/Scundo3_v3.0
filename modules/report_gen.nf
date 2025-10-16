@@ -15,21 +15,8 @@ process copy_index_files {
     stdout // this will have a \n at the end! Beware!
 
     script:
-
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
-
-    if (!params.genomeVer || !params.species) 
     """
-    copy_indexFiles_V2.py --samplesheet ${samplesheet} --outdir_of_secundo ${params.outdir} --annotation_Version ${annotation} --indexDir ${params.indexDir} 
-    """
-
-    else 
-    """
-    copy_indexFiles_V2.py --samplesheet ${samplesheet} --outdir_of_secundo ${params.outdir} --annotation_Version ${annotation} --indexDir ${params.indexDir} --reference_genome ${params.species}/${params.genomeVer}
+    copy_indexFiles_V2.py --samplesheet ${samplesheet} --outdir_of_secundo ${params.outdir} --annotation_Version ${meta.annotation} --indexDir ${params.indexDir} 
     """
 }
 
@@ -129,27 +116,16 @@ process run_RmarkDown_script {
     val "https://webfs${secundo_folder.replaceAll("\\n", "")}/analysis_rnaseq.html"
 
     script:
-
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
-    if (!params.genomeVer) {
-        genome_ver = meta.genome_ver
-    } else {
-        genome_ver = params.genomeVer
-    }
     """
     cp ${projectDir}/assets/analysis_rnaseq.rmd ${secundo_folder}
 
-    rmarkdown_run.py --secundo_dir ${secundo_folder.replaceAll("\\n", "")} --Reference_Genome ${genome_ver} --Annotation_Version ${annotation}
+    rmarkdown_run.py --secundo_dir ${secundo_folder.replaceAll("\\n", "")} --Reference_Genome ${genome_ver} --Annotation_Version ${meta.annotation}
     """
 }
 
 process biotools_orderAppend {
     label 'small_mem'
-    
+
     input:
     val report_link
 
@@ -174,7 +150,7 @@ process biotools_orderAppend {
 }
 
 process run_RmarkDown_script_chip {
-    label 'small_mem'
+    label 'lil_mem'
 
     input:
     val secundo_folder

@@ -144,7 +144,7 @@ th.p <- "ENCODE suggested parameters"
 
 order_link <- paste0(order_url_base, json.fields.v[["prnOrderNo"]])
 
-cat("###", make_link("Explore Differentially Expressed Gene Analysis in BioTools Portal", "https://compbio.sgc.loc/"), "\n\n")
+cat("###", make_link("Explore Differentially Expressed Gene Analysis in BioTools Portal", "https://compbio/"), "\n\n")
 
 cat("##", make_link(json.fields.v[["prnOrderNo"]], order_link), "\n\n")
 
@@ -647,7 +647,7 @@ cor.exp.matrix         <- cor(rsem.tpms.exp.m, method=cor.method, use="complete.
 
 plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes without clustering")
 
-pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
+# pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 
 g <- pheatmap(cor.exp.matrix, main=plot.title,border_color=NA, cluster_cols=F, cluster_rows=F, color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 
@@ -657,7 +657,7 @@ ggsave(filename = file_path, plot = g, device = "pdf", width = 30, height = 30, 
 
 plot.title <- paste(cor.method,"correlation for ", nrow(rsem.tpms.exp.m), "expressed genes with hierarchical clustering")
 
-pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
+# pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 
 g <- pheatmap(cor.exp.matrix, main=plot.title, border_color=NA,color = colorRampPalette(rev(brewer.pal(n = 11, name ="RdBu")))(100))
 

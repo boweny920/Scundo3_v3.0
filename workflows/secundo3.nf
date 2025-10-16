@@ -16,11 +16,3 @@ workflow SECUNDO3 {
     picard = picard_run.out.collect()
     
 }
-
-workflow SECUNDO_BACTERIA {
-    take:
-    meta
-
-    main:
-    
-}

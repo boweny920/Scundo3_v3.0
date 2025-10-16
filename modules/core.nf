@@ -10,16 +10,15 @@ process samplesheet_process {
 
     script:
 
-    // sendMail(to: 'by2747@stowers.org', subject: "${params.fcid} Secundo2 pipeline execution started", body: "Workflow dir: ${workflow.workDir}")
     if (!params.samplereport) {
 
         if (!params.molng) {
         """
-        samplesheet_Make_V4.py --fcid ${fcid} -i ${params.roboSamplesheet}
+        samplesheet_Make_V5.py --fcid ${fcid} -i ${params.roboSamplesheet} -s ${params.species} -g ${params.genomeVer} -a ${params.annotation}
         """
         } else { // This is to account for the situation when 1 FCID can have 2 or more MOLNG-ID
         """
-        samplesheet_Make_V4.py --fcid ${fcid} -i ${params.roboSamplesheet} --molng ${params.molng}
+        samplesheet_Make_V5.py --fcid ${fcid} -i ${params.roboSamplesheet} --molng ${params.molng} -s ${params.species} -g ${params.genomeVer} -a ${params.annotation}
         """
         }
     } else {
@@ -32,7 +31,13 @@ process samplesheet_process {
 
 process STAR_n_mkdirs {
 
-    label 'big_mem'
+    memory { 50.GB * task.attempt }
+    cpus { 10 * task.attempt }
+    // time { 1.hour * task.attempt }
+
+    errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
+    maxRetries 4
+
     // conda "${projectDir}/assets/conda_star_2_7_3a.yml" // This is no longer necessary, as new indexes are not built with this older STAR version
 
     input:
@@ -44,30 +49,18 @@ process STAR_n_mkdirs {
     publishDir "${output_lib_folder}", mode: 'copy'
 
     script:
-    // If user defined a genome to use, use that genome as reference. Otherwise, use the LIMs fetched reference genome as reference
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
-
-    if (!params.genomeVer || !params.species) {
-        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${annotation}/${meta.ID}" )
-        index_genome = "${meta.species}/${meta.genome_ver}"
-        genomeVer = "${meta.genome_ver}"
-    } else {
-        output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${params.genomeVer}.${annotation}/${meta.ID}" )
-        index_genome = "${params.species}/${params.genomeVer}" 
-        genomeVer = "${params.genomeVer}"
-    } 
-
+    output_lib_folder = file("${params.outdir}/${meta.pi_name}/${meta.requester_name}/${meta.molngID}.${meta.genome_ver}.${meta.annotation}/${meta.ID}" )
+    index_genome = "${meta.species}/${meta.genome_ver}"
+    genomeVer = "${meta.genome_ver}"
     output_lib_folder.mkdirs()
 
     """
+    ml STAR 
+
     STAR --version > star_version.log
 
     STAR --readFilesIn ${meta.fastqs} \
-		--genomeDir ${params.indexDir}/${index_genome}/annotation/${annotation}/STAR_76bp \
+		--genomeDir ${params.indexDir}/${index_genome}/annotation/${meta.annotation}/STAR_76bp \
 		--runThreadN 10 \
 		--outSAMtype BAM SortedByCoordinate \
 		--outFileNamePrefix ${meta.ID}. \
@@ -82,7 +75,7 @@ process STAR_n_mkdirs {
         --alignIntronMax 1000000 \
         --alignMatesGapMax 1000000 \
         --readFilesCommand zcat \
-        --limitBAMsortRAM 10000000000 \
+        --limitBAMsortRAM 20000000000 \
         --outSAMattributes NH HI MD AS nM \
         --quantMode TranscriptomeSAM GeneCounts
     """
@@ -102,26 +95,24 @@ process RSEM_calculate {
 
     script:
 
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
-
     if (meta.readType.contains("PairEnd"))
     """
+    ml rsem
+
     rsem-calculate-expression --version > rsem_version.log
 
     rsem-calculate-expression --no-bam-output --estimate-rspd  --strandedness reverse --paired-end \
-    --bam ${star_bamtoTranscriptome_out_bam} ${params.indexDir}/${index_genome}/annotation/${annotation}/RSEM/${genomeVer}.${annotation}.RSEM \
+    --bam ${star_bamtoTranscriptome_out_bam} ${params.indexDir}/${index_genome}/annotation/${meta.annotation}/RSEM/${genomeVer}.${meta.annotation}.RSEM \
     ${meta.ID}.RSEM
     """
     else
     """
+    ml rsem
+
     rsem-calculate-expression --version > rsem_version.log
 
     rsem-calculate-expression --no-bam-output --estimate-rspd  --strandedness reverse \
-    --bam ${star_bamtoTranscriptome_out_bam} ${params.indexDir}/${index_genome}/annotation/${annotation}/RSEM/${genomeVer}.${annotation}.RSEM \
+    --bam ${star_bamtoTranscriptome_out_bam} ${params.indexDir}/${index_genome}/annotation/${meta.annotation}/RSEM/${genomeVer}.${meta.annotation}.RSEM \
     ${meta.ID}.RSEM
     """
 }
@@ -140,6 +131,8 @@ process ERCC_control {
 
     script:
     """
+    ml bowtie2 samtools
+    
     bowtie2 -x /n/data1/genomes/indexes/ERCC/bowtie2/ERCC92 -p 4 \
 		-U ${meta.fastqs} \
 		-S ERCC_control.sam 2>&1 | tee -a ${meta.ID}.ercc.log
@@ -174,16 +167,12 @@ process picard_run {
 
     script:
 
-    if (!params.annotation) {
-        annotation = meta.annotation
-    } else {
-        annotation = params.annotation 
-    }
-
     """
+    ml picard
+
     picard CollectRnaSeqMetrics input=${star_sortedByCoord_out_bam} \
     output=${meta.ID}.rnaseq.stats strand_specificity=FIRST_READ_TRANSCRIPTION_STRAND \
-    ref_flat=${params.indexDir}/${index_genome}/annotation/${annotation}/tables/${genomeVer}.${annotation}.refFlat.txt\
-    ribosomal_intervals=${params.indexDir}/${index_genome}/annotation/${annotation}/extras/${genomeVer}.${annotation}.riboList.default.txt 2>&1 | tee -a ${meta.ID}.picard.log
+    ref_flat=${params.indexDir}/${index_genome}/annotation/${meta.annotation}/tables/${genomeVer}.${meta.annotation}.refFlat.txt\
+    ribosomal_intervals=${params.indexDir}/${index_genome}/annotation/${meta.annotation}/extras/${genomeVer}.${meta.annotation}.riboList.default.txt 2>&1 | tee -a ${meta.ID}.picard.log
     """
 }

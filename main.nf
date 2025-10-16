@@ -1,20 +1,3 @@
-params.fcid = "" 
-params.molng = ""
-params.outdir = "/n/core/Bioinformatics/secondary" 
-params.annotation = "" 
-params.species = ""
-params.genomeVer = ""
-params.indexDir = "/n/analysis/genomes/" // Dir of all indexes, can change later if we want
-params.user_email = "by2747@stowers.org"
-params.public_dataxlsx = "" // full path required
-params.lab = ""
-params.requester = ""
-params.roboSamplesheet = "/n/analysis/genomes/sampleSheet_ROBOINDEX_2023.csv"
-params.samplereport = "" // Provide one or a list of Sample_Report.csv seperated by "," Full path required! You must also provide params.lab and params.requester
-params.skip_biotools = "" // Provide T/True if you do not wish to upload to biotools
-params.chip_cut_atac = ""
-params.bacteria = ""
-
 include {SAMPLESHEET_CHANNEL} from "./workflows/samplesheet_channel.nf"
 include {SECUNDO3} from "./workflows/secundo3.nf"
 include {FINAL_REPORT} from "./workflows/final_report.nf"
@@ -22,8 +5,6 @@ include {CHIP_RELATED} from "./workflows/cut_chip_atac.nf"
 include {samplesheet_process} from "./modules/core.nf"
 include {run_RmarkDown_script} from "./modules/report_gen.nf"
 include {samplesheet_process_publicSRAGEO} from "./modules/public_SRAGEO.nf"
-
-include {SECUNDO_BACTERIA} from "./workflows/secundo3.nf"
 
 def report
 
@@ -34,11 +15,6 @@ workflow {
             } else { 
                 samplesheet_process(params.fcid)
                 SAMPLESHEET_CHANNEL(samplesheet_process.out)
-
-                //Bacteria RNA seq block
-                if (params.bacteria) {
-                    
-                }
 
                 // RNA seq related Block
                 if (!params.chip_cut_atac) {

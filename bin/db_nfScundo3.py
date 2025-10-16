@@ -28,53 +28,80 @@ for index in data:
 
     if os.path.exists(i+'/targets.tsv') != True:
         continue
-
+    
     with open(i+'/targets.tsv') as tsvfile:
         reader = csv.DictReader(tsvfile, dialect='excel-tab')
-        reader = sorted(reader, key=lambda d:d['Secundo Name'])
-        record = []
-        simples = []
-        simple = {}
-        simple['Flowcell'] = []
-        column = [row for row in reader]
-       
-        countfor = 0
-        # initid = column[0]['Library']
-        initid = ""
-        initflowid = ""
-        for row in column:
-            
-            first = row['Secundo Name']
-          
-            if(first == initid ): 
-                # go add the flowcell
-                firstflowid = row['Flowcell']
-                if (initflowid == firstflowid):
-                    continue
+        
+        '''For in-houst secundo'''
+        if "Flowcell" in reader.fieldnames:
+            reader = sorted(reader, key=lambda d:d['Secundo Name'])
+            record = []
+            simples = []
+            simple = {}
+            simple['Flowcell'] = []
+            column = [row for row in reader]
+            countfor = 0
+            # initid = column[0]['Library']
+            initid = ""
+            initflowid = ""
+            for row in column:
+                first = row['Secundo Name']
+                if(first == initid ): 
+                    # go add the flowcell
+                    firstflowid = row['Flowcell']
+                    if (initflowid == firstflowid):
+                        continue
+                    else:
+                        simple['Flowcell'].append(row['Flowcell'])
+                        initflowid = row['Flowcell']
                 else:
+                    # create a new simple.
+                    simple = {}
+                    simple['Flowcell']=[]   
+                    simple['LibraryID'] = row['Library']
+                    simple['SecundoName'] = row['Secundo Name']
+                    simple['SampleName'] = row['Sample Name']
                     simple['Flowcell'].append(row['Flowcell'])
                     initflowid = row['Flowcell']
-            else:
-                # create a new simple.
-               
-                simple = {}
-                
-                
-                simple['Flowcell']=[]   
-                simple['LibraryID'] = row['Library']
-                simple['SecundoName'] = row['Secundo Name']
-                simple['SampleName'] = row['Sample Name']
-                simple['Flowcell'].append(row['Flowcell'])
-                initflowid = row['Flowcell']
-                initid = first
-                
-                simples.append(simple)
-
-            
-            
-        order['Samples']=simples
-       
-        tsvfile.close()
+                    initid = first
+                    simples.append(simple)
+            order['Samples']=simples
+            tsvfile.close()
+        else:
+            """For pubdata roboSecundo"""
+            reader = sorted(reader, key=lambda d:d['Secundo Name'])
+            record = []
+            simples = []
+            simple = {}
+            simple['Flowcell'] = []
+            column = [row for row in reader]
+            countfor = 0
+            # initid = column[0]['Library']
+            initid = ""
+            initflowid = ""
+            for row in column:
+                first = row['Secundo Name']
+                if(first == initid ): 
+                    # go add the flowcell
+                    firstflowid = row['Order']
+                    if (initflowid == firstflowid):
+                        continue
+                    else:
+                        simple['Flowcell'].append(row['Order'])
+                        initflowid = row['Order']
+                else:
+                    # create a new simple.
+                    simple = {}
+                    simple['Flowcell']=[]   
+                    simple['LibraryID'] = row['Library']
+                    simple['SecundoName'] = row['Secundo Name']
+                    simple['SampleName'] = row['Sample Name']
+                    simple['Flowcell'].append(row['Order'])
+                    initflowid = row['Order']
+                    initid = first
+                    simples.append(simple)
+            order['Samples']=simples
+            tsvfile.close()
     
     with open(i+'/lims_order.json','r') as jsonfile:
         load_dict = json.load(jsonfile) 
@@ -125,15 +152,3 @@ j = json.dumps(orders)
 
 with open("/n/core/Bioinformatics/tools/biotools/db/datafile.json","w") as dump_f:
     json.dump(orders,dump_f)
-
-      
-    
-    
-
-
-
-
-
-
-    
-   
